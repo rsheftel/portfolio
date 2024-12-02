@@ -5,7 +5,7 @@ Unit tests of the testing module
 import numpy as np
 from pytest import approx
 
-from portfolio.math import testing
+import testing
 
 
 def assert_results(values, min_value, max_value, sum_value):

@@ -161,3 +161,21 @@ def calc_exponential_function(
     """
     x, weights = trimmed_weights(x, window_length, half_life)
     return dispatch_calc(x, _function, name, weights=weights)
+
+
+def prior_index(x: list | NDArray | pd.DataFrame | pd.Series) -> pd.Timestamp | float | int:
+    """
+    Returns the value immediately preceding the first value of the index in x. If x is a pd.Series or pd.DataFrame,
+    then if the index is a DateTimeIndex it will be the preceeding business day, if it a numeric index is will be
+    the first value minus 1. If it is a list or NDArray it will return 0.
+
+    :param x: any of a list, numpy array, pd.Series of pd.DataFrame
+    :return: pd.Timestamp, int or float
+    """
+    if isinstance(x, (pd.Series, pd.DataFrame)):
+        if isinstance(x.index, pd.DatetimeIndex):
+            return x.index[0] - pd.offsets.BusinessDay(1)
+        else:
+            return x.index[0] - 1
+    else:
+        return 0

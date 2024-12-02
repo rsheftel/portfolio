@@ -3,16 +3,34 @@ Statistical and related functions
 """
 
 from math import sqrt
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from scipy.odr import Data, Model, ODR
-from scipy.stats import linregress
+from scipy.stats import linregress, ttest_1samp, ttest_ind
 from sklearn.decomposition import PCA
 from wpca import WPCA
 
 from portfolio.math.base import dropna, calc_exponential_function, dispatch_calc
+from portfolio.utils import reindex_superset
+
+
+def mean(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+    """
+    Given a list or series calculate the mean dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        return np.nanmean(x)
+
+    name = "mean" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
 
 
 def mean_exp_weighted(
@@ -21,6 +39,7 @@ def mean_exp_weighted(
         half_life: int,
         annualize: bool = True,
         annual_periods: int = 252,
+        name: str = None,
 ) -> float | pd.Series:
     """
     Exponentially weighted average. The assumption is that the highest index value of X is the most recent and the 0
@@ -32,6 +51,7 @@ def mean_exp_weighted(
     :param half_life: half life of the exponential decay
     :param annualize: if True the annualize the results
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
@@ -39,9 +59,66 @@ def mean_exp_weighted(
         x, weights = dropna(x, weights)
         return np.average(x, weights=weights)
 
-    res = calc_exponential_function(x, window_length, half_life, _calc, "mean_exponential_weighted")
+    name = "mean_exponential_weighted" if name is None else name
+    res = calc_exponential_function(x, window_length, half_life, _calc, name=name)
     if annualize:
         res = res * annual_periods
+    return res
+
+
+def min(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+    """
+    Given a list or series calculate the min dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        return np.nanmin(x)
+
+    name = "min" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
+
+
+def max(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+    """
+    Given a list or series calculate the max dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        return np.nanmax(x)
+
+    name = "max" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
+
+
+def stdev(
+        x: list | NDArray | pd.DataFrame | pd.Series, annualize: bool = True, annual_periods: int = 252,
+        name: str = None
+) -> float | pd.Series:
+    """
+    Given a list or series calculate the standard deviation dropping all nans
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param annualize: if True the annualize the results
+    :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        return np.nanstd(x)
+
+    name = "standard_deviation" if name is None else name
+    res = dispatch_calc(x, _calc, name=name)
+    if annualize:
+        res = res * sqrt(annual_periods)
     return res
 
 
@@ -51,6 +128,7 @@ def stdev_exp_weighted(
         half_life: int,
         annualize: bool = True,
         annual_periods: int = 252,
+        name: str = None,
 ) -> float | pd.Series:
     """
     Exponentially standard deviation. The assumption is that the highest index value of X is the most recent and the 0
@@ -62,6 +140,7 @@ def stdev_exp_weighted(
     :param half_life: half life of the exponential decay
     :param annualize: if True the annualize the results
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
@@ -71,16 +150,16 @@ def stdev_exp_weighted(
         variance = np.average((x - average) ** 2, weights=weights)
         return sqrt(variance)
 
-    res = calc_exponential_function(x, window_length, half_life, _calc, "stdev_exponential_weighted")
+    name = "standard_deviation_exponential_weighted" if name is None else name
+    res = calc_exponential_function(x, window_length, half_life, _calc, name)
     if annualize:
         res = res * sqrt(annual_periods)
     return res
 
 
 def downside_deviation(
-        x: list | NDArray | pd.DataFrame | pd.Series,
-        annualize: bool = True,
-        annual_periods: int = 252,
+        x: list | NDArray | pd.DataFrame | pd.Series, annualize: bool = True, annual_periods: int = 252,
+        name: str = None
 ) -> float | pd.Series:
     """
     Downside semi-deviation. This is the standard deviation of all the observations less than the MAR, where the
@@ -90,6 +169,7 @@ def downside_deviation(
     :param x: any of a list, numpy array, pd.Series of pd.DataFrame
     :param annualize: if True the annualize the results
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
@@ -99,7 +179,8 @@ def downside_deviation(
         variance = np.average(x ** 2, weights=None)
         return sqrt(variance)
 
-    res = dispatch_calc(x, _calc, name="downside_deviation")
+    name = "downside_deviation" if name is None else name
+    res = dispatch_calc(x, _calc, name=name)
     if annualize:
         res = res * sqrt(annual_periods)
     return res
@@ -144,7 +225,8 @@ def cagr(prices: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int 
     Given a time series of prices, calculate the compound annual growth rate.
 
     :param prices: any of a list, numpy array, pd.Series or pd. DataFrame
-    :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector.
+        This is only used if the prices series does not have a DateTimeIndex, if so that is used.
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
     if isinstance(prices, (pd.Series, pd.DataFrame)):
@@ -212,3 +294,120 @@ def total_least_squares(x, y, weights=None):
     slope = model.components_[0][1] / model.components_[0][0]
     intercept = model.mean_[1] - model.mean_[0] * slope
     return slope, intercept
+
+
+def ttest_1sample_1side(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+    """
+    One-sided one-sample t-test p-value
+
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        x = dropna(x)
+        return ttest_1samp(x, 0, alternative="greater").pvalue
+
+    return dispatch_calc(x, _calc, name="ttest_1sample_1side_pvalue")
+
+
+def ttest_2sample_2side(x_1: list | NDArray | pd.Series, x_2: list | NDArray | pd.Series) -> float | pd.Series:
+    """
+    Two-sided two-sample t-test p-value. If both x_1 and x_2 are series they will first be aligned on the superset
+    of their index to do the test only on the values for index that exist in both series.
+
+    :param x_1: any of a list, numpy array, pd.Series
+    :param x_2: any of a list, numpy array, pd.Series
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+    if isinstance(x_1, pd.Series) and isinstance(x_2, pd.Series):
+        x_1 = reindex_superset(x_1, x_2)
+        x_2 = reindex_superset(x_2, x_1)
+
+    x_1 = x_1.values if isinstance(x_1, pd.Series) else x_1
+    x_2 = x_2.values if isinstance(x_2, pd.Series) else x_2
+    # remove the nan from both
+    x_1, x_2 = dropna(x_1, x_2)
+    x_2, x_1 = dropna(x_2, x_1)
+    return ttest_ind(x_1, x_2, equal_var=False, alternative="two-sided").pvalue
+
+
+def first_date(x: pd.Series | pd.DataFrame) -> pd.Series | Any:
+    """
+    For a given pd.Series of pd.DataFrame will return the index value of the first non NaN value
+
+    :param x: pd.Series or pd.DataFrame
+    :return: single value if x is pd.Series, pd.Series if x is a pd.DataFrame
+    """
+    if isinstance(x, pd.Series):
+        first = x.first_valid_index()
+        if first is None:
+            return None
+        return first
+
+    elif isinstance(x, pd.DataFrame):
+        res = pd.Series(name="first_date")
+        for col in x.columns:
+            res[col] = first_date(x[col])
+        return res
+    else:
+        raise AttributeError("parameter x must be pd.Series or pd.DataFrame")
+
+
+def last_date(x: pd.Series | pd.DataFrame) -> pd.Series | Any:
+    """
+    For a given pd.Series of pd.DataFrame will return the index value of the last non NaN value
+
+    :param x: pd.Series or pd.DataFrame
+    :return: single value if x is pd.Series, pd.Series if x is a pd.DataFrame
+    """
+    if isinstance(x, pd.Series):
+        first = x.last_valid_index()
+        if first is None:
+            return None
+        return first
+
+    elif isinstance(x, pd.DataFrame):
+        res = pd.Series(name="last_date")
+        for col in x.columns:
+            res[col] = last_date(x[col])
+        return res
+    else:
+        raise AttributeError("parameter x must be pd.Series or pd.DataFrame")
+
+
+def observations_count(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+    """
+    Given a list or series calculate the number of non NaN values
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        return np.count_nonzero(~np.isnan(x))
+
+    name = "observations_count" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
+
+
+def percentage_above(
+        x: list | NDArray | pd.DataFrame | pd.Series, threshold: int | float = 0, name: str = None
+) -> float | pd.Series:
+    """
+    Given a list or series calculate the max dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :param threshold: threshold value
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        x = np.asarray(x)
+        x = dropna(x)
+        return np.sum(x > threshold) / x.size
+
+    name = "percentage_above" if name is None else name
+    return dispatch_calc(x, _calc, name=name)

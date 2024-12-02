@@ -9,7 +9,7 @@ from pandas.testing import assert_series_equal, assert_frame_equal
 from pytest import approx
 
 from portfolio.math import base, financial
-from portfolio.math.testing import mock_time_series
+from testing import mock_time_series
 
 # GLOBAL VARIABLES
 
@@ -86,12 +86,12 @@ def test_pnl(x, return_type):
     print(f"testing - {type(x)}")
     if return_type == "float":
         print("testing return_type=float")
-        assert financial.pnl.pnl(x) == 10253.92
+        assert financial.pnl.total_pnl(x) == 10253.92
 
     if return_type == "pd.Series":
         print("testing return_type = pd.Series")
-        actual = financial.pnl.pnl(x)
-        expected = pd.Series({"px1": 10253.92, "px2": 20507.84}, name="pnl")
+        actual = financial.pnl.total_pnl(x)
+        expected = pd.Series({"px1": 10253.92, "px2": 20507.84}, name="total_pnl")
         assert_series_equal(actual, expected)
 
 
@@ -359,6 +359,17 @@ def test_underwater_equity():
     expected = pd.Series([0.0, 0.0, -0.2, -0.5, -0.1, 0])
     assert_series_equal(actual, expected)
 
+    # negative first number
+    x = [-1, 2, 3, -6, -4, -5]
+    actual = financial.pnl.underwater_equity(x)
+    expected = pd.Series([-1, 0, 0, -6, -10, -15])
+    assert_series_equal(actual, expected)
+
+    x = [-1, -2, 3, -6, -4, -5]
+    actual = financial.pnl.underwater_equity(x)
+    expected = pd.Series([-1, -3, 0, -6, -10, -15])
+    assert_series_equal(actual, expected)
+
 
 def test_drawdown_details():
     x = time_series_trend_nan_pnl
@@ -462,6 +473,15 @@ def test_drawdown_details():
     assert_frame_equal(actual["px2"][-5:], expected2, check_dtype=False)
 
 
+def test_average_drawdown():
+    x = pd.DataFrame({"px1": x_nan, "px2": x_nan2}, index=pd.bdate_range("2024-03-29", periods=100))
+    x = x.diff()
+
+    expected = pd.Series({"px1": -4.53, "px2": -5.20857142}, name="average_drawdown")
+    actual = financial.pnl.average_drawdown(x)
+    assert_series_equal(actual, expected)
+
+
 def test_max_drawdown():
     x = pd.DataFrame({"px1": x_nan, "px2": x_nan2}, index=pd.bdate_range("2024-03-29", periods=100))
     x = x.diff()
@@ -502,7 +522,7 @@ def test_plunge_ratio_exp_weighted():
     x = pd.DataFrame({"px1": x_nan, "px2": x_nan2}, index=pd.bdate_range("2024-03-29", periods=100))
     x = x.diff()
 
-    expected = pd.Series({"px1": -0.854753, "px2": -0.766261}, name="plunge_ratio_exponentially_weighted")
+    expected = pd.Series({"px1": -0.854753, "px2": -0.766261}, name="plunge_ratio_exponential_weighted")
     actual = financial.pnl.plunge_ratio_exp_weighted(x, 512, 120)
     assert_series_equal(actual, expected)
 

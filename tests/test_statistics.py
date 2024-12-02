@@ -12,7 +12,7 @@ from pandas.testing import assert_series_equal
 from pytest import approx
 
 import portfolio.math.statistics as statutils
-from portfolio.math.testing import mock_time_series
+from testing import mock_time_series
 
 # GLOBAL VARIABLES
 
@@ -46,6 +46,21 @@ time_series_nan_list = [
 
 
 # END GLOBAL VARIABLES
+
+
+@pytest.mark.parametrize("x, return_type", time_series_nan_list)
+def test_mean(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        actual = statutils.mean(x)
+        assert actual == approx(102.42812500)
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        actual = statutils.mean(x)
+        expected = pd.Series({"px1": 102.42812500, "px2": 102.460520833}, name="mean")
+        assert_series_equal(actual, expected)
 
 
 @pytest.mark.parametrize("x, return_type", time_series_01_list)
@@ -108,6 +123,75 @@ def test_mean_exp_weighted_with_nan(x, return_type):
         assert_series_equal(actual, expected)
 
 
+@pytest.mark.parametrize("x, return_type", time_series_nan_list)
+def test_min(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        actual = statutils.min(x)
+        assert actual == approx(96.97)
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        actual = statutils.min(x)
+        expected = pd.Series({"px1": 96.97, "px2": 96.97}, name="min")
+        assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize("x, return_type", time_series_nan_list)
+def test_max(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        actual = statutils.max(x)
+        assert actual == approx(106.95)
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        actual = statutils.max(x)
+        expected = pd.Series({"px1": 106.95, "px2": 106.95}, name="max")
+        assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize("x, return_type", time_series_nan_list)
+def test_percent_above(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        actual = statutils.percentage_above(x, 100)
+        assert actual == approx(0.875)
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        actual = statutils.percentage_above(x, 102.45, name='percent_greater')
+        expected = pd.Series({"px1": 0.479166667, "px2": 0.489583333}, name="percent_greater")
+        assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize("x, return_type", time_series_nan_list)
+def test_stdev(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        actual = statutils.stdev(x, annualize=False)
+        assert actual == approx(2.077825041)
+
+        actual = statutils.stdev(x)
+        assert actual == approx(2.077825041 * sqrt(252))
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        actual = statutils.stdev(x, annualize=False)
+        expected = pd.Series({"px1": 2.077825041, "px2": 2.106179583}, name="standard_deviation")
+        assert_series_equal(actual, expected)
+
+        actual = statutils.stdev(x)
+        expected = pd.Series(
+            {"px1": 2.077825041 * sqrt(252), "px2": 2.106179583 * sqrt(252)}, name="standard_deviation"
+        )
+        assert_series_equal(actual, expected)
+
+
 @pytest.mark.parametrize("x, return_type", time_series_01_list)
 def test_stdev_exp_weighted(x, return_type):
     print(f"testing - {type(x)}")
@@ -129,19 +213,22 @@ def test_stdev_exp_weighted(x, return_type):
         print("testing return_type = pd.Series")
         # as a list - window equal x length
         actual = statutils.stdev_exp_weighted(x, 100, 50, annualize=False)
-        expected = pd.Series({"px1": 2.068694916, "px2": 2.068694916 * 2}, name="stdev_exponential_weighted")
+        expected = pd.Series(
+            {"px1": 2.068694916, "px2": 2.068694916 * 2}, name="standard_deviation_exponential_weighted"
+        )
         assert_series_equal(actual, expected)
 
         # as a list - window greater than x length
         actual = statutils.stdev_exp_weighted(x, 200, 25)
         expected = pd.Series(
-            {"px1": 1.954001321 * sqrt(252), "px2": 1.954001321 * 2 * sqrt(252)}, name="stdev_exponential_weighted"
+            {"px1": 1.954001321 * sqrt(252), "px2": 1.954001321 * 2 * sqrt(252)},
+            name="standard_deviation_exponential_weighted",
         )
         assert_series_equal(actual, expected)
 
         # as a list - window less than x length
         actual = statutils.stdev_exp_weighted(x, 50, 10, annualize=False)
-        expected = pd.Series({"px1": 1.54679696, "px2": 1.54679696 * 2}, name="stdev_exponential_weighted")
+        expected = pd.Series({"px1": 1.54679696, "px2": 1.54679696 * 2}, name="standard_deviation_exponential_weighted")
         assert_series_equal(actual, expected)
 
 
@@ -166,7 +253,7 @@ def test_stdev_exp_weighted_with_nan(x, return_type):
         print("testing return_type = pd.Series")
         # as a list - window equal x length
         actual = statutils.stdev_exp_weighted(x, 50, 10, annualize=False)
-        expected = pd.Series({"px1": 1.525678244, "px2": 1.553862322}, name="stdev_exponential_weighted")
+        expected = pd.Series({"px1": 1.525678244, "px2": 1.553862322}, name="standard_deviation_exponential_weighted")
         assert_series_equal(actual, expected)
 
 
@@ -259,7 +346,8 @@ def test_cagr(x, return_type):
         print("testing return_type = pd.Series")
         actual = statutils.cagr(x)
         expected = pd.Series(
-            {"px1": 0.12604629, "px2": 0.12604629}, name="cagr",
+            {"px1": 0.12604629, "px2": 0.12604629},
+            name="cagr",
         )
         assert_series_equal(actual, expected)
 
@@ -440,3 +528,61 @@ def test_weighted_tls():
 
     expected = (-0.305357531, 12.297008485)
     assert_almost_equal(weighted, expected)
+
+
+@pytest.mark.parametrize("x, return_type", time_series_01_list)
+def test_ttest_1sample_1side(x, return_type):
+    print(f"testing - {type(x)}")
+    if return_type == "float":
+        print("testing return_type = float")
+        x = np.diff(x)
+        assert statutils.ttest_1sample_1side(x) == approx(0.4468684)
+
+    if return_type == "pd.Series":
+        print("testing return_type = pd.Series")
+        x = x.diff(1)  # make it a change series from levels
+        actual = statutils.ttest_1sample_1side(x)
+        expected = pd.Series(
+            {"px1": 0.4468684, "px2": 0.4468684},
+            name="ttest_1sample_1side_pvalue",
+        )
+        assert_series_equal(actual, expected)
+
+
+def test_ttest_2sample_2side():
+    x_1 = [-3.27, 2.18, -2.52, 0.86, 2.84, -0.45, -0.48, 2.13, -2.18, -4.5, -2.86, 2.29, 0.91, -1.23, 3.26]
+    x_2 = [-0.89, -1.98, -0.62, -2.89, -3.39, 1.9, 1.12, 0.88, 3.21, 2.41, 4.94, 2.85, 1.94, -1.67, -2.5]
+
+    assert statutils.ttest_2sample_2side(x_1, x_2) == approx(0.549562559)
+
+    x_1 = pd.Series(x_1)
+    assert statutils.ttest_2sample_2side(x_1, x_2) == approx(0.549562559)
+
+    x_2 = pd.Series(x_2)
+    assert statutils.ttest_2sample_2side(x_1, x_2) == approx(0.549562559)
+
+
+def test_first_date():
+    ser = pd.Series([1, 2, 3], pd.date_range("20130101", periods=3))
+    assert statutils.first_date(ser) == pd.Timestamp("20130101")
+
+    df = pd.DataFrame({"first": [np.nan, "b", "c"], "second": [1, np.nan, np.nan]}, index=["aa", "bb", "cc"])
+    assert_series_equal(statutils.first_date(df), pd.Series(["bb", "aa"], index=["first", "second"], name="first_date"))
+
+
+def test_last_date():
+    ser = pd.Series([1, 2, 3], pd.date_range("20130101", periods=3))
+    assert statutils.last_date(ser) == pd.Timestamp("20130103")
+
+    df = pd.DataFrame({"first": [np.nan, "b", "c"], "second": [1, np.nan, np.nan]}, index=["aa", "bb", "cc"])
+    assert_series_equal(statutils.last_date(df), pd.Series(["cc", "aa"], index=["first", "second"], name="last_date"))
+
+
+def test_observations_count():
+    ser = pd.Series([1, 2, 3], pd.date_range("20130101", periods=3))
+    assert statutils.observations_count(ser) == 3
+
+    df = pd.DataFrame({"first": [np.nan, 3, 4.0], "second": [1, np.nan, np.nan]}, index=["aa", "bb", "cc"])
+    expected = pd.Series([2, 1], index=["first", "second"], name="observations_count")
+    actual = statutils.observations_count(df)
+    assert_series_equal(actual, expected)

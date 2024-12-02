@@ -7,6 +7,24 @@ import pandas as pd
 import scipy.stats
 from numpy.typing import NDArray
 
+from portfolio.utils import match_index, fillna
+
+
+def pct_change_ln(prices: list | NDArray | pd.DataFrame | pd.Series) -> NDArray | pd.DataFrame | pd.Series:
+    """
+    Calculate the log-normal returns from a price series
+
+    :param prices: either pandas DataFrame or Series, or a numpy array
+    :return: same format as the prices parameter
+    """
+    if isinstance(prices, (pd.Series, pd.DataFrame)):
+        # the default fillna in the pct_change method does not seem to work
+        return np.log(prices.ffill().pct_change(fill_method=None) + 1)
+
+    # for numpy
+    return np.insert(np.diff(np.log(fillna(prices))), 0, np.nan)
+
+
 def to_returns(prices: list | NDArray | pd.DataFrame | pd.Series) -> list | NDArray | pd.DataFrame | pd.Series:
     """
     Calculate the period returns from a price series. The length of the output is the same as the length of the input
@@ -23,25 +41,52 @@ def to_returns(prices: list | NDArray | pd.DataFrame | pd.Series) -> list | NDAr
     return np.insert(np.diff(prices) / np.asarray(prices)[:-1], 0, np.nan)
 
 
+def to_pnl(prices: list | NDArray | pd.DataFrame | pd.Series) -> list | NDArray | pd.DataFrame | pd.Series:
+    """
+    Calculate the pnl from a price series. The length of the output is the same as the length of the input
+    and the first value will be np.nan because there is no return on the first element.
+
+    :param prices: either pandas DataFrame or Series, or a numpy array or list
+    :return: same format as the prices parameter
+    """
+    if isinstance(prices, (pd.Series, pd.DataFrame)):
+        # the default fillna in the pct_change method does not seem to work
+        return prices.diff()
+
+    # for numpy and list
+    return np.insert(np.diff(prices), 0, np.nan)
+
+
 def price_index(
         returns: list | NDArray | pd.DataFrame | pd.Series, start_value: float | int = 100, start_index=None
 ) -> list | NDArray | pd.DataFrame | pd.Series:
     """
-    Rebase a time series of price index from an array of period returns. If the start_index is supplied then the
-    start_value will be added at that index level. For numpy anything other than none in start_index will prepend
-    the series with the start_value.
+    Create a time series of price index from an array of period returns. The returns are compounded for each period.
+    If the start_index is supplied then the start_value will be added at that index level. For numpy anything other
+    than none in start_index will prepend the series with the start_value.
+    NaNs in the input will be treated as zero values to calculate the index
 
     :param returns: either pandas DataFrame or Series, or a numpy array
     :param start_value: starting value of the series
     :param start_index: if provided then the index for the start_value in the returned list
     :return: same format as prices parameter
     """
-    if isinstance(returns, (pd.Series, pd.DataFrame)):
+    if isinstance(returns, pd.Series):
+        # preserve what returns were nan to populate the result with nans
+        nans = returns.isna()
+        returns = returns.fillna(value=0)
         res = (1 + returns).expanding().apply(np.prod, raw=True) * start_value
-        if start_index:
+        res.loc[nans] = np.nan
+        if start_index is not None:
             assert start_index < res.index.min(), "provided start_index is not less first element of existing index"
             res.loc[start_index] = start_value
         return res.sort_index()
+
+    if isinstance(returns, pd.DataFrame):
+        res = {}
+        for column in returns.columns:
+            res[column] = price_index(returns[column], start_index=start_index, start_value=start_value)
+        return pd.DataFrame(res)
 
     # for numpy and lists
     res = price_index(pd.Series(returns), start_value=start_value).values
@@ -169,3 +214,22 @@ def returns_to_period(
         return (1 + x).resample(period).prod() - 1
     else:
         raise NotImplementedError("Datatypes other then pd.DataFrame and pd.Series not implemented")
+
+
+def returns_to_pnl(returns: pd.Series | pd.DataFrame, capital: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFrame:
+    """
+    Given a pd.Series or pd.DataFrame of %returns and capital, will return a matrix of $PnL. The returns and capital
+    must have the same column names. The returns and capital are end of period values, so the pnl for a given
+    day will be the returns for today divided by the capital from the of the prior period. So if the frequency is daily
+    then today's returns are today's returns / yesterday's EOD capital.
+
+    If pd.DataFrames are provided, then the columns names must be the same in the returns and capital DataFrames
+
+    :param returns: pd.Series or pd.DataFrame
+    :param capital: pd.Series or pd.DataFrame with columns matching pnl
+    :return: pd.Series of pd.DataFrame
+    """
+    capital = capital.copy()
+    capital_prior = match_index(capital.shift(1), returns)
+    pnl = returns * capital_prior
+    return pnl

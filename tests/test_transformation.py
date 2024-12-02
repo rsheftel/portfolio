@@ -5,14 +5,14 @@ Unit test for the transformation module
 import numpy as np
 import pandas as pd
 import pytest
-from numpy.testing import assert_almost_equal
+from numpy.testing import assert_almost_equal, assert_array_equal
 from pandas import to_datetime
 from pandas.testing import assert_frame_equal, assert_series_equal
 
 import portfolio.math.base
 import portfolio.math.financial as financial
 import portfolio.math.transformation as transformation
-from portfolio.math.testing import mock_time_series
+from testing import mock_time_series
 
 # global variables
 data = {}
@@ -76,6 +76,19 @@ def assert_equality(method, actual, expected_values):
 @pytest.mark.parametrize(
     "key, expected",
     [
+        ("basic", [np.nan, 0.00995033, -0.02000067, 0.02985296, -0.01980263, 0.0295588, 0.00966191, -0.01941809]),
+        ("many_nan", [np.nan, np.nan, -0.02000067, 0.0, 0.01005034, 0.0295588, 0.00966191, 0.0]),
+    ],
+)
+def test_pct_chg_ln(method, key, expected):
+    returns = transformation.pct_change_ln(data[method][key])
+    assert_equality(method, returns, expected)
+
+
+@pytest.mark.parametrize("method", ["numpy", "series", "dataframe"])
+@pytest.mark.parametrize(
+    "key, expected",
+    [
         ("basic", [np.nan, 0.01, -0.01980198, 0.03030303, -0.019607843, 0.03, 0.009708738, -0.019230769]),
         ("many_nan", [np.nan, np.nan, -0.01980198, np.nan, np.nan, 0.03, 0.009708738, np.nan]),
     ],
@@ -83,6 +96,12 @@ def assert_equality(method, actual, expected_values):
 def test_to_returns(method, key, expected):
     returns = transformation.to_returns(data[method][key])
     assert_equality(method, returns, expected)
+
+
+def test_to_pnl():
+    assert_array_equal(transformation.to_pnl(time_series_equity["numpy"])[1:], time_series_pnl["numpy"])
+    assert_series_equal(transformation.to_pnl(time_series_equity["series"]), time_series_pnl["series"])
+    assert_frame_equal(transformation.to_pnl(time_series_equity["dataframe"]), time_series_pnl["dataframe"])
 
 
 def test_price_index():
@@ -104,8 +123,9 @@ def test_price_index():
         [100, 100.30, 99.93, 100.90, 100.51, 100.52, 101.18, 101.32, 101.00, 101.35, 100.79], index=bdates[:11]
     )
     expected[pd.Timestamp("2024-03-29")] = 100
-    actual = transformation.price_index(time_series_returns["series"][:10], start_value=100,
-                                        start_index=pd.Timestamp("2024-03-29"))
+    actual = transformation.price_index(
+        time_series_returns["series"][:10], start_value=100, start_index=pd.Timestamp("2024-03-29")
+    )
     assert_series_equal(actual, expected, check_freq=False)
 
     expected = pd.DataFrame(
@@ -118,6 +138,9 @@ def test_price_index():
     actual = transformation.price_index(time_series_returns["dataframe"][:10], start_value=100)
     assert_frame_equal(actual, expected, check_freq=False)
 
+    actual = transformation.price_index(
+        time_series_returns["dataframe"], start_value=100, start_index=pd.Timestamp("2024-03-29")
+    )
     expected = pd.DataFrame(
         {
             "px1": [100, 100.79, 98.23, 102.39, 99.73, 99.11, 101.69, 101.72, 99.41, 100.46, 96.97],
@@ -125,10 +148,17 @@ def test_price_index():
         },
         index=bdates[0:11],
     )
-    actual = transformation.price_index(
-        time_series_returns["dataframe"][:10], start_value=100, start_index=pd.Timestamp("2024-03-29")
+    assert_frame_equal(actual[:11], expected, check_freq=False)
+
+    # nans in the returns are propagated through to the price index
+    expected = pd.DataFrame(
+        {
+            "px1": [110.325588, 108.920895, 108.535905, 110.013434, 107.453772],
+            "px2": [np.nan, np.nan, 105.2911196, 106.7244759, 104.2413376],
+        },
+        index=bdates[-5:],
     )
-    assert_frame_equal(actual, expected, check_freq=False)
+    assert_frame_equal(actual[-5:], expected, check_freq=False)
 
 
 @pytest.mark.parametrize("method", ["numpy", "series", "dataframe"])
@@ -290,3 +320,34 @@ def test_returns_to_period():
     )
     expected.name = "px1"
     assert_series_equal(actual["px1"], expected, check_freq=False)
+
+
+def test_returns_to_pnl():
+    expected = time_series_pnl["dataframe"]
+
+    # single capital amount fixed for the entire series
+    pnl = time_series_pnl["dataframe"]
+    capital = time_series_equity['dataframe'].copy()
+    capital['px1'] = 50
+    capital['px2'] = 50
+    returns = pnl / capital
+
+    actual = transformation.returns_to_pnl(returns, capital)
+    assert_frame_equal(actual, expected)
+
+    # variable capital
+    capital[:'2024-04-30'] = 100
+    capital['2024-05-01': '2024-05-31'] = 200
+    capital['2024-06-01': '2024-06-30'] = 300
+    capital['2024-07-01': '2024-07-31'] = 400
+    capital['2024-08-01': '2024-08-31'] = 500
+    returns = pnl / capital.shift(1)
+
+    actual = transformation.returns_to_pnl(returns, capital)
+    assert_frame_equal(actual, expected)
+
+    # variable capital changing every day
+    capital = time_series_equity['dataframe']
+    returns = time_series_returns["dataframe"]
+    actual = transformation.returns_to_pnl(returns, capital)
+    assert_frame_equal(actual, expected[1:])

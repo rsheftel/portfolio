@@ -9,7 +9,8 @@ import pandas as pd
 from numpy.typing import NDArray
 from scipy import stats
 
-from portfolio.math.base import dispatch_calc, dropna
+from portfolio.math.base import dispatch_calc, dropna, prior_index
+from portfolio.math.financial import common
 from portfolio.math.financial.common import (
     sharpe,
     sharpe_exp_weighted,
@@ -17,8 +18,11 @@ from portfolio.math.financial.common import (
     sortino_exp_weighted,
     conditional_sortino,
     conditional_sortino_exp_weighted,
+    omega_ratio,
+    robustness,
 )
-from portfolio.math.statistics import mean_exp_weighted
+from portfolio.utils import match_index
+
 
 
 def __keep_imports():
@@ -32,10 +36,13 @@ def __keep_imports():
     assert sortino_exp_weighted
     assert conditional_sortino
     assert conditional_sortino_exp_weighted
+    assert omega_ratio
+    assert robustness
+
 
 
 def risk_capital(
-    downside_df: pd.Series | pd.DataFrame, target_risk_percent: float, rebalance_freq: str = "ME"
+        downside_df: pd.Series | pd.DataFrame, target_risk_percent: float, rebalance_freq: str = "ME"
 ) -> pd.Series | pd.DataFrame:
     """
     Given a time series of downside risk measures, either a single series in a pd.Series or many series in a
@@ -59,18 +66,17 @@ def risk_capital(
     return res
 
 
-def pnl(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+def total_pnl(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     """
     Given a time series of PnLs, calculate the cumulative PnL for the entire series
 
     :param x: any of a list, numpy array, pd.Series or pd. DataFrame
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
     def _calc(x):
         return np.nansum(x)
 
-    return dispatch_calc(x, _calc, name="pnl")
+    return dispatch_calc(x, _calc, name="total_pnl")
 
 
 def r_squared(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
@@ -90,7 +96,7 @@ def r_squared(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series
 
         x = np.cumsum(x)
         rhat = stats.linregress(np.arange(len(x)), x).rvalue
-        return rhat**2
+        return rhat ** 2
 
     return dispatch_calc(x, _calc, name="r_squared")
 
@@ -114,195 +120,51 @@ def k_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     return dispatch_calc(x, _calc, name="k_ratio")
 
 
-def omega_ratio(x: list | NDArray | pd.DataFrame | pd.Series, threshold=0) -> float | pd.Series:
+def underwater_equity(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.Series | pd.DataFrame:
     """
-    Calculate the Omega ratio for a series of pnl.
-     See https://en.wikipedia.org/wiki/Omega_ratio for more details.
+    For a given series of pnl will return the underwater equity of the input series.
 
-    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
-    :param threshold: the threshold value for dividing pnl into those above and below
-    :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    :param pnl: any of a list, numpy array, pd.Series or pd.DataFrame
+    :return: pd.Series if pnl is a list, array or a pd.Series. A pd.DataFrame if pnl is a pd.DataFrame
     """
-
-    def _calc(x):
-        x = dropna(x)
-        # Calculate gains and losses relative to the threshold
-        gains = x - threshold
-        positive_gains = np.maximum(gains, 0)
-        negative_gains = np.maximum(-gains, 0)
-
-        # Calculate the integrals (sums in discrete case)
-        integral_above = np.sum(positive_gains)
-        integral_below = np.sum(negative_gains)
-
-        # Avoid division by zero
-        if integral_below == 0:
-            return np.inf  # or a very large number if infinity isn't preferred
-
-        # Calculate Omega ratio
-        return integral_above / integral_below
-
-    return dispatch_calc(x, _calc, name="omega_ratio")
-
-
-def robustness(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
-    """
-    Robustness of the pnl defined as the percentage of days, when ordered from the best to the worst, that can be
-    eliminated and the total PnL would still be above zero. The higher the number, the more missed days the pnl
-    can withstand before turning negative.
-
-    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
-    :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
-    """
-
-    def _calc(x):
-        x = dropna(x)
-        x_total = np.sum(x)
-        if x_total <= 0.0:  # if Total PnL is negative the robustness is 0%
-            return 0.0
-        x_sorted = np.sort(x)[::-1]
-        x_sorted_cum = x_sorted.cumsum()
-        if x_sorted_cum.max() == x_total:  # If there are no down days, robustness is 100%
-            return 1.0
-        days_to_get_to_zero = np.argmax(x_sorted_cum >= x_total) + 1
-        return days_to_get_to_zero / len(x)
-
-    return dispatch_calc(x, _calc, name="robustness")
-
-
-def underwater_equity(x: list | NDArray | pd.DataFrame | pd.Series) -> pd.Series | pd.DataFrame:
-    """
-    For a given input series will return the underwater equity of the input series.
-
-    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
-    :return: pd.Series if X is a list, array or a pd.Series. A pd.DataFrame if x is a pd.DataFrame
-    """
-    if isinstance(x, pd.DataFrame):
+    if isinstance(pnl, pd.DataFrame):
         res = {}
-        for column in x.columns:
-            res[column] = underwater_equity(x[column])
+        for column in pnl.columns:
+            res[column] = underwater_equity(pnl[column])
         return pd.DataFrame(res)
 
-    x = pd.Series(x)
-    x = x.cumsum()  # turn the PnL into equity curve
-    x = x.ffill()  # fill forward the equity for NaN observations
-    x = x.fillna(0)  # if the first instance is NaN this will make it zero
-    high_water_mark = x.cummax()
-    drawdown = x - high_water_mark
+    pnl = pd.Series(pnl)
+    equity = pnl.cumsum()  # turn the PnL into equity curve
+    equity = equity.ffill()  # fill forward the equity for NaN observations
+    equity = equity.fillna(0)  # if the first instance is NaN this will make it zero
+
+    equity = pd.concat([pd.Series(0, index=[prior_index(equity)]),
+                        equity])  # prepend a zero as the first value to catch if the first pnl is negative
+    high_water_mark = equity.cummax()
+    high_water_mark = high_water_mark.iloc[1:]  # drop that prepended value
+    equity = equity.iloc[1:]  # drop that prepended value
+    drawdown = equity - high_water_mark
 
     return drawdown
 
 
-def drawdown_details(x: list | NDArray | pd.DataFrame | pd.Series) -> pd.DataFrame | dict[str, pd.DataFrame]:
+def drawdown_details(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.DataFrame | dict[str, pd.DataFrame]:
     """
-    Given an input series or dataframe on pnls, will return a dataframe, or dict of dataframes for an input dataframe,
+    Given an input series or dataframe of pnls, will return a dataframe, or dict of dataframes for an input dataframe,
     of the drawdowns with their start and end index, length and max drawdown amount. If the input has a DateTimeIndex
     the length of the drawdown returned is in business days, not accounting for holidays.
 
-    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
-    :return: pd.DataFrame if X is a list, array or a pd.Series. A dict of pd.DataFrame if x is a pd.DataFrame
+    :param pnl: any of a list, numpy array, pd.Series or pd.DataFrame
+    :return: pd.DataFrame if pnl is a list, array or a pd.Series. A dict of pd.DataFrame if pnl is a pd.DataFrame
     """
-    if isinstance(x, pd.DataFrame):
+    if isinstance(pnl, pd.DataFrame):
         res = {}
-        for column in x.columns:
-            res[column] = drawdown_details(x[column])
+        for column in pnl.columns:
+            res[column] = drawdown_details(pnl[column])
         return res
 
-    drawdown = underwater_equity(x)
-    is_zero = drawdown == 0
-    # find start dates (first day when dd is non-zero after a zero)
-    start = ~is_zero & is_zero.shift(1)
-    start = list(start[start == True].index)  # NOQA
-
-    # find end dates (first day when dd is 0 after non-zero)
-    end = is_zero & (~is_zero).shift(1)
-    end = list(end[end == True].index)  # NOQA
-
-    if len(start) == 0:  # start.empty
-        return None
-
-    # drawdown has no end (end period in dd)
-    if len(end) == 0:  # end.empty
-        end.append(drawdown.index[-1])
-
-    # if the first drawdown start is larger than the first drawdown end it
-    # means the drawdown series begins in a drawdown, and therefore we must add
-    # the first index to the start series
-    if start[0] > end[0]:
-        start.insert(0, drawdown.index[0])
-
-    # if the last start is greater than the end then we must add the last index
-    # to the end series since the drawdown series must finish with a drawdown
-    if start[-1] > end[-1]:
-        end.append(drawdown.index[-1])
-
-    result = pd.DataFrame(
-        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
-        index=range(0, len(start)),
-    )
-
-    for i in range(0, len(start)):
-        # if the index of the Series is not a DateTimeIndex, and the start and end are the same, then need to set the
-        # drawdown to the value on that single date. Pandas slicing works different for DateTimeIndex and not on how
-        # inclusive it is of the end points
-        if not isinstance(drawdown.index, pd.DatetimeIndex) and (start[i] == end[i]):
-            dd = drawdown[end[i]]
-        else:
-            dd = drawdown[start[i] : end[i]].min()
-        # find the index of the max drawdown, first instance
-        if start[i] == end[i]:  # if the last drawdown is on the last day
-            max_dd_index = start[i]
-        else:
-            max_dd_index = drawdown[start[i] : end[i]].idxmin()
-
-        if isinstance(drawdown.index, pd.DatetimeIndex):
-            if (i == len(start) - 1) and (
-                drawdown[end[i]] != 0.0
-            ):  # if this is the last drawdown and the series did not recover
-                recovery_length = np.nan  # set the recovery length to pd.NaT
-            else:
-                recovery_length = np.busday_count(max_dd_index.date(), end[i].date())
-            result.iloc[i] = (
-                start[i],
-                end[i],
-                max_dd_index,
-                np.busday_count(start[i].date(), end[i].date()),
-                np.busday_count(start[i].date(), max_dd_index.date()),
-                recovery_length,
-                dd,
-            )
-        else:
-            if (i == len(start) - 1) and (
-                drawdown[end[i]] != 0.0
-            ):  # if this is the last drawdown and the series did not recover
-                recovery_length = np.nan  # set the recovery length to np.nan
-            else:
-                recovery_length = end[i] - max_dd_index
-            result.iloc[i] = (
-                start[i],
-                end[i],
-                max_dd_index,
-                end[i] - start[i],
-                max_dd_index - start[i],
-                recovery_length,
-                dd,
-            )
-    return result
-
-
-def maximum_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
-    """
-    Maximum drawdown
-
-    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
-    :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
-    """
-
-    def _calc(x):
-        details = drawdown_details(x)
-        return details["drawdown"].min()
-
-    return dispatch_calc(x, _calc, name="maximum_drawdown")
+    drawdown = underwater_equity(pnl)
+    return common.drawdown_details(drawdown)
 
 
 def average_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
@@ -312,12 +174,17 @@ def average_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd
     :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
+    return common.average_drawdown(x, drawdown_details)
 
-    def _calc(x):
-        details = drawdown_details(x)
-        return details["drawdown"].mean()
 
-    return dispatch_calc(x, _calc, name="average_drawdown")
+def maximum_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+    """
+    Maximum drawdown
+
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
+    :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+    return common.maximum_drawdown(x, drawdown_details)
 
 
 def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
@@ -327,13 +194,7 @@ def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float
     :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
-    def _calc(x):
-        details = drawdown_details(x)
-        return details["length"].mean()
-
-    return dispatch_calc(x, _calc, name="average_drawdown_time", as_series=True)
-
+    return common.average_drawdown_time(x, drawdown_details)
 
 def average_recovery_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     """
@@ -342,12 +203,7 @@ def average_recovery_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float
     :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
-    def _calc(x):
-        details = drawdown_details(x)
-        return details["recovery_length"].mean()
-
-    return dispatch_calc(x, _calc, name="average_recovery_time", as_series=True)
+    return common.average_recovery_time(x, drawdown_details)
 
 
 def plunge_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
@@ -361,21 +217,13 @@ def plunge_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Ser
     :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
-    def _calc(x):
-        details = drawdown_details(x)
-        lengths = details["length"]
-        recovery_lengths = details["recovery_length"]
-        recovery_lengths, lengths = dropna(recovery_lengths, lengths)  # filter out the last np.NaN if exists
-        return -1 * (recovery_lengths / lengths).mean()
-
-    return dispatch_calc(x, _calc, name="plunge_ratio")
+    return common.plunge_ratio(x, drawdown_details)
 
 
 def plunge_ratio_exp_weighted(
-    x: list | NDArray | pd.DataFrame | pd.Series,
-    window_length: int,
-    half_life: int,
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        window_length: int,
+        half_life: int,
 ) -> float | pd.Series:
     """
     Exponentially weighted Plunge Ratio.
@@ -386,16 +234,7 @@ def plunge_ratio_exp_weighted(
     :param half_life: half life of the exponential decay
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
-    def _calc(x):
-        details = drawdown_details(x)[["max_index", "length", "recovery_length"]]
-        details = details.set_index("max_index")
-        details = details.dropna()
-        details["plunge"] = -1 * details["recovery_length"] / details["length"]
-        plunges = details["plunge"].reindex(x.index)
-        return mean_exp_weighted(plunges.values, window_length, half_life, annualize=False)
-
-    return dispatch_calc(x, _calc, name="plunge_ratio_exponentially_weighted", as_series=True)
+    return common.plunge_ratio_exp_weighted(x, window_length, half_life, drawdown_details)
 
 
 def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int = 252) -> float | pd.Series:

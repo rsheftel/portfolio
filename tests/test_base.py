@@ -7,7 +7,7 @@ from numpy.testing import assert_almost_equal, assert_equal
 from pandas.testing import assert_series_equal, assert_frame_equal
 
 from portfolio.math import base, statistics
-from portfolio.math.testing import mock_time_series
+from testing import mock_time_series
 
 x = mock_time_series(100, 0.25, auto_regress=0.01, drift=0.05, seed=1234, round_decimals=2)
 dates = pd.date_range("2024-01-01", periods=100, freq="1D")
@@ -167,3 +167,13 @@ def test_rolling_exp_weighted():
         annualize=False,
     )
     assert_series_equal(actual[:10], expected)
+
+
+def test_prior_index():
+    assert base.prior_index([9, 2, 3]) == 0
+    assert base.prior_index(np.array([9, 2, 3])) == 0
+    assert base.prior_index(pd.Series([9, 2, 3], index=[11, 12, 13])) == 10
+    assert base.prior_index(pd.Series([9, 2, 3], index=[11.5, 12, 13])) == 10.5
+    assert base.prior_index(pd.Series([9, 2, 3],
+                                      index=pd.date_range("2024-11-11", periods=3))) == pd.Timestamp("2024-11-08"
+                                                                                                     )
