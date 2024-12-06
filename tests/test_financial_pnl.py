@@ -473,6 +473,21 @@ def test_drawdown_details():
     assert_frame_equal(actual["px2"][-5:], expected2, check_dtype=False)
 
 
+def test_drawdown_details_empty():
+    # no drawdown data
+    x = pd.Series([1, 2, 3, 4, 5])
+    expected = pd.DataFrame(
+        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+    )
+    actual = financial.pnl.drawdown_details(x)
+    assert_frame_equal(actual, expected)
+
+    assert financial.pnl.average_drawdown(x) is np.nan
+    assert financial.pnl.maximum_drawdown(x) is np.nan
+    assert financial.pnl.average_drawdown_time(x) is np.nan
+    assert financial.pnl.average_recovery_time(x) is np.nan
+
+
 def test_average_drawdown():
     x = pd.DataFrame({"px1": x_nan, "px2": x_nan2}, index=pd.bdate_range("2024-03-29", periods=100))
     x = x.diff()

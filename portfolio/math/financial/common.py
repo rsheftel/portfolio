@@ -254,7 +254,9 @@ def drawdown_details(drawdown: pd.DataFrame | pd.Series) -> pd.DataFrame | dict[
     end = list(end[end == True].index)  # NOQA
 
     if len(start) == 0:  # start.empty
-        return None
+        return pd.DataFrame(
+            columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+        )
 
     # drawdown has no end (end period in dd)
     if len(end) == 0:  # end.empty
@@ -336,6 +338,8 @@ def average_drawdown(x: list | NDArray | pd.DataFrame | pd.Series, drawdown_deta
 
     def _calc(x):
         details = drawdown_details(x)
+        if len(details) == 0:
+            return np.nan
         return details["drawdown"].mean()
 
     return dispatch_calc(x, _calc, name="average_drawdown")
@@ -352,6 +356,8 @@ def maximum_drawdown(x: list | NDArray | pd.DataFrame | pd.Series, drawdown_deta
 
     def _calc(x):
         details = drawdown_details(x)
+        if len(details) == 0:
+            return np.nan
         return details["drawdown"].min()
 
     return dispatch_calc(x, _calc, name="maximum_drawdown")
@@ -368,6 +374,8 @@ def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series, drawdown
 
     def _calc(x):
         details = drawdown_details(x)
+        if len(details) == 0:
+            return np.nan
         return details["length"].mean()
 
     return dispatch_calc(x, _calc, name="average_drawdown_time", as_series=True)
@@ -384,6 +392,8 @@ def average_recovery_time(x: list | NDArray | pd.DataFrame | pd.Series, drawdown
 
     def _calc(x):
         details = drawdown_details(x)
+        if len(details) == 0:
+            return np.nan
         return details["recovery_length"].mean()
 
     return dispatch_calc(x, _calc, name="average_recovery_time", as_series=True)
@@ -404,6 +414,8 @@ def plunge_ratio(x: list | NDArray | pd.DataFrame | pd.Series, drawdown_details)
 
     def _calc(x):
         details = drawdown_details(x)
+        if len(details) == 0:
+            return np.nan
         lengths = details["length"]
         recovery_lengths = details["recovery_length"]
         recovery_lengths, lengths = dropna(recovery_lengths, lengths)  # filter out the last np.NaN if exists
@@ -413,10 +425,7 @@ def plunge_ratio(x: list | NDArray | pd.DataFrame | pd.Series, drawdown_details)
 
 
 def plunge_ratio_exp_weighted(
-        x: list | NDArray | pd.DataFrame | pd.Series,
-        window_length: int,
-        half_life: int,
-        drawdown_details
+        x: list | NDArray | pd.DataFrame | pd.Series, window_length: int, half_life: int, drawdown_details
 ) -> float | pd.Series:
     """
     Exponentially weighted Plunge Ratio.
@@ -433,6 +442,8 @@ def plunge_ratio_exp_weighted(
         details = drawdown_details(x)[["max_index", "length", "recovery_length"]]
         details = details.set_index("max_index")
         details = details.dropna()
+        if len(details) == 0:
+            return np.nan
         details["plunge"] = -1 * details["recovery_length"] / details["length"]
         plunges = details["plunge"].reindex(x.index)
         return mean_exp_weighted(plunges.values, window_length, half_life, annualize=False)

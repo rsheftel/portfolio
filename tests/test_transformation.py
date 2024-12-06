@@ -351,3 +351,21 @@ def test_returns_to_pnl():
     returns = time_series_returns["dataframe"]
     actual = transformation.returns_to_pnl(returns, capital)
     assert_frame_equal(actual, expected[1:])
+
+
+def test_volatility_match():
+    assert_array_equal(
+        transformation.volatility_match(time_series_equity["numpy"], time_series_equity["numpy"]),
+        time_series_equity["numpy"],
+    )
+    assert_array_equal(
+        transformation.volatility_match(time_series_equity["series"], time_series_equity["series"]),
+        time_series_equity["series"],
+    )
+    actual = transformation.volatility_match(time_series_equity["dataframe"], time_series_equity["series"])
+    expected = time_series_equity["series"].std()
+    assert_almost_equal(actual.std().values, np.array([expected, expected]))
+
+    actual = transformation.volatility_match(time_series_equity["dataframe"], time_series_equity["dataframe"]["px1"])
+    expected = time_series_equity["dataframe"]["px1"].std()
+    assert_almost_equal(actual.std().values, np.array([expected, expected]))

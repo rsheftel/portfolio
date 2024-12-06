@@ -296,11 +296,12 @@ def total_least_squares(x, y, weights=None):
     return slope, intercept
 
 
-def ttest_1sample_1side(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+def ttest_1sample_1side(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
     """
     One-sided one-sample t-test p-value
 
     :param x: any of a list, numpy array, pd.Series or pd.DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
@@ -308,7 +309,8 @@ def ttest_1sample_1side(x: list | NDArray | pd.DataFrame | pd.Series) -> float |
         x = dropna(x)
         return ttest_1samp(x, 0, alternative="greater").pvalue
 
-    return dispatch_calc(x, _calc, name="ttest_1sample_1side_pvalue")
+    name = "ttest_1sample_1side_pvalue" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
 
 
 def ttest_2sample_2side(x_1: list | NDArray | pd.Series, x_2: list | NDArray | pd.Series) -> float | pd.Series:

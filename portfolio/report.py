@@ -55,7 +55,7 @@ def all_metrics_pnl(pnl: pd.DataFrame, window_length=5 * 252, half_life=180) -> 
         financial.pnl.plunge_ratio(pnl),
         financial.pnl.plunge_ratio_exp_weighted(pnl, window_length, half_life),
         financial.pnl.calmar_ratio(pnl),
-        statistics.ttest_1sample_1side(pnl),
+        statistics.ttest_1sample_1side(pnl, name="ttest_pvalue"),
     ]
     return pd.concat(metrics, axis=1).T
 
@@ -102,7 +102,7 @@ def all_metrics_returns(returns: pd.DataFrame, window_length=5 * 252, half_life=
         financial.returns.plunge_ratio(returns),
         financial.returns.plunge_ratio_exp_weighted(returns, window_length, half_life),
         financial.returns.calmar_ratio(returns),
-        statistics.ttest_1sample_1side(returns),
+        statistics.ttest_1sample_1side(returns, name="ttest_pvalue"),
     ]
     return pd.concat(metrics, axis=1).T
 

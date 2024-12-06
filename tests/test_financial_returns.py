@@ -330,6 +330,21 @@ def test_drawdown_details():
     assert_frame_equal(actual['nans'], expected, check_dtype=False)
 
 
+def test_drawdown_details_empty():
+    # no drawdown data
+    x = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5])
+    expected = pd.DataFrame(
+        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+    )
+    actual = financial.returns.drawdown_details(x)
+    assert_frame_equal(actual, expected)
+
+    assert financial.returns.average_drawdown(x) is np.nan
+    assert financial.returns.maximum_drawdown(x) is np.nan
+    assert financial.returns.average_drawdown_time(x) is np.nan
+    assert financial.returns.average_recovery_time(x) is np.nan
+
+
 def test_average_drawdown():
     expected = pd.Series({"px": -0.01535097, "nans": -0.01283156}, name="average_drawdown")
     actual = financial.returns.average_drawdown(time_series_returns['dataframe'])

@@ -233,3 +233,22 @@ def returns_to_pnl(returns: pd.Series | pd.DataFrame, capital: pd.Series | pd.Da
     capital_prior = match_index(capital.shift(1), returns)
     pnl = returns * capital_prior
     return pnl
+
+
+def volatility_match(x: list | NDArray | pd.DataFrame | pd.Series,
+                     volatility_series: list | NDArray | pd.DataFrame | pd.Series) -> NDArray | pd.DataFrame | pd.Series:
+    """
+    Will return the x input with the values adjusted so that they match the volatility of the volatility_series input
+    :param x: list, numpy array, pd.Series or pd.DataFrame
+    :param volatility_series: list, numpy array or pd.Series
+    :return: list, numpy array, pd.Series or pd.DataFrame
+    """
+    base_vol = np.nanstd(volatility_series)
+    if isinstance(x, (pd.Series, pd.DataFrame)):
+        return x * (base_vol / x.std(ddof=0))
+
+    res = np.asarray(x) * (np.nanstd(x) / base_vol)
+    if isinstance(x, list):
+        return list(res)
+
+    return res
