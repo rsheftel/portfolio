@@ -9,7 +9,7 @@ from pandas.testing import assert_frame_equal
 
 from portfolio import report as grids
 from portfolio.math import transformation
-from testing import mock_time_series
+from portfolio.testing import mock_time_series
 
 
 def test_month_year_table():

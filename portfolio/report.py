@@ -107,6 +107,50 @@ def all_metrics_returns(returns: pd.DataFrame, window_length=5 * 252, half_life=
     return pd.concat(metrics, axis=1).T
 
 
+def all_correlations_pnl(
+        pnl: pd.DataFrame, factor: pd.DataFrame = pd.DataFrame(), periods: int = 5
+) -> dict[str, pd.DataFrame]:
+    """
+    Returns a pd.DataFrame of all available correlations with factors
+
+    :param pnl: pd.DataFrame of pnl
+    :param factor: pd.DataFrame of factor levels, if empty pd.DataFrame then only correlations with pnl are returned
+    :param periods: periods for change-on-change correlations
+    :return: dict of pd.DataFrame
+    """
+    correlations = {}
+
+    # level correlations
+    correlations_level = financial.pnl.correlation(pnl, factor, periods=None)
+    correlations["level_all"] = correlations_level
+    correlations["level_pnl"] = correlations_level.loc[pnl.columns, pnl.columns]
+    correlations["level_factor"] = correlations_level.loc[factor.columns, factor.columns]
+    correlations["level_pnl_factor"] = correlations_level.loc[factor.columns, pnl.columns]
+
+    # change correlations
+    correlations_change = financial.pnl.correlation(pnl, factor, periods=periods)
+    correlations["change_all"] = correlations_change
+    correlations["change_pnl"] = correlations_change.loc[pnl.columns, pnl.columns]
+    correlations["change_factor"] = correlations_change.loc[factor.columns, factor.columns]
+    correlations["change_pnl_factor"] = correlations_change.loc[factor.columns, pnl.columns]
+
+    # level correlation pvalues
+    correlations_level_pvalue_pvalues = financial.pnl.correlation_pvalues(pnl, factor, periods=None)
+    correlations["level_pvalue_all"] = correlations_level_pvalue_pvalues
+    correlations["level_pvalue_pnl"] = correlations_level_pvalue_pvalues.loc[pnl.columns, pnl.columns]
+    correlations["level_pvalue_factor"] = correlations_level_pvalue_pvalues.loc[factor.columns, factor.columns]
+    correlations["level_pvalue_pnl_factor"] = correlations_level_pvalue_pvalues.loc[factor.columns, pnl.columns]
+
+    # change correlation pvalues
+    correlations_change_pvalue_pvalues = financial.pnl.correlation_pvalues(pnl, factor, periods=None)
+    correlations["change_pvalue_all"] = correlations_change_pvalue_pvalues
+    correlations["change_pvalue_pnl"] = correlations_change_pvalue_pvalues.loc[pnl.columns, pnl.columns]
+    correlations["change_pvalue_factor"] = correlations_change_pvalue_pvalues.loc[factor.columns, factor.columns]
+    correlations["change_pvalue_pnl_factor"] = correlations_change_pvalue_pvalues.loc[factor.columns, pnl.columns]
+
+    return correlations
+
+
 def month_year_table(ser: pd.Series | pd.DataFrame, fill_value=None, func=sum) -> pd.DataFrame:
     """
     Takes a series and returns a DataFrame in the standard performance reporting format with months for the columns

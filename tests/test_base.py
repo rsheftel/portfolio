@@ -7,7 +7,7 @@ from numpy.testing import assert_almost_equal, assert_equal
 from pandas.testing import assert_series_equal, assert_frame_equal
 
 from portfolio.math import base, statistics
-from testing import mock_time_series
+from portfolio.testing import mock_time_series
 
 x = mock_time_series(100, 0.25, auto_regress=0.01, drift=0.05, seed=1234, round_decimals=2)
 dates = pd.date_range("2024-01-01", periods=100, freq="1D")

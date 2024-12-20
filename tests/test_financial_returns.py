@@ -9,7 +9,7 @@ from pytest import approx
 
 from portfolio.math import financial
 from portfolio.math.transformation import price_index
-from testing import mock_time_series
+from portfolio.testing import mock_time_series
 
 time_series_equity: dict = {}
 time_series_returns: dict = {}

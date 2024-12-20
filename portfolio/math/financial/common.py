@@ -15,6 +15,7 @@ from portfolio.math.statistics import (
     downside_deviation,
     downside_deviation_exp_weighted
 )
+import portfolio.utils as pdutils
 
 
 def sharpe(
@@ -449,3 +450,46 @@ def plunge_ratio_exp_weighted(
         return mean_exp_weighted(plunges.values, window_length, half_life, annualize=False)
 
     return dispatch_calc(x, _calc, name="plunge_ratio_exponential_weighted", as_series=True)
+
+
+def add_factors_to_drawdown_details(drawdown_details_df: pd.DataFrame, factors: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds factors information to the drawdown details dataframe and return the new drawdown details dataframe.
+    The factors should be levels.
+
+    :param drawdown_details_df: pd.DataFrame containing drawdown details in the form returned by drawdown_details()
+    :param factors: pd.DataFrame of time series of factor levels
+    :return: pd.DataFrame
+    """
+    drawdown_details_df = drawdown_details_df.copy()
+    start_to_maxs = []
+    max_to_ends = []
+
+    # calculate the values of the factor changes for each row
+    for row in drawdown_details_df.itertuples():
+        start_factors = pdutils.asof_prior(factors, row.start).values
+        max_index_factors = pdutils.asof_next(factors, row.max_index).values
+        end_factors = pdutils.asof_next(factors, row.end).values
+
+        start_to_maxs.append(max_index_factors - start_factors)
+        max_to_ends.append(end_factors - max_index_factors)
+
+    # turn the row calculations into a pd.DataFrame
+    start_to_max = pd.DataFrame(start_to_maxs, columns=factors.columns)
+    max_to_end = pd.DataFrame(max_to_ends, columns=factors.columns)
+
+    # if the stat-to-max or max-to-end column for any factor is NaN, then nan the other
+    for col in start_to_max.columns:
+        max_to_end.loc[start_to_max[col].isna(), col] = np.nan
+        start_to_max.loc[max_to_end[col].isna(), col] = np.nan
+
+    # add the multi=index header
+    start_to_max = pdutils.prepend_index_level(start_to_max, "factor_change", "factor_change_start_to_max")
+    max_to_end = pdutils.prepend_index_level(max_to_end, "factor_change", "factor_change_max_to_end")
+
+    # make the input a multi-index
+    drawdown_details_df.columns = pd.MultiIndex.from_tuples(
+        [("", col) for col in drawdown_details_df.columns], names=["factor_change", 0]
+    )
+
+    return pd.concat([drawdown_details_df, start_to_max, max_to_end], axis=1)

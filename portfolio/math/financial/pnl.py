@@ -3,6 +3,7 @@ Financial math functions like Sharpe based on PnL time series
 """
 
 from math import sqrt
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -20,7 +21,10 @@ from portfolio.math.financial.common import (
     conditional_sortino_exp_weighted,
     omega_ratio,
     robustness,
+    add_factors_to_drawdown_details
 )
+from portfolio.math.transformation import pnl_to_equity
+from portfolio.math import statistics
 from portfolio.utils import match_index
 
 
@@ -38,6 +42,7 @@ def __keep_imports():
     assert conditional_sortino_exp_weighted
     assert omega_ratio
     assert robustness
+    assert add_factors_to_drawdown_details
 
 
 
@@ -253,3 +258,74 @@ def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: i
         return avg_annual / abs(max_drawdown)
 
     return dispatch_calc(x, _calc, name="calmar_ratio")
+
+
+def _prep_factor_correlation(
+        pnl: pd.DataFrame,
+        factor: pd.DataFrame,
+        periods: int | None = None,
+) -> pd.DataFrame:
+    """
+    prepare the DataFrames for correlation
+
+    :param pnl: pd.DataFrame of PnLs
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :return: concatenated and differenced pd.DataFrame
+    """
+    # check the column names are unique
+    assert len(pnl.columns.intersection(factor.columns)) == 0, "duplicate columns in data and factors"
+
+    # create the levels for both and combine
+    equity = pnl_to_equity(pnl, start_index=prior_index(pnl))
+    factor_levels = factor.copy()
+    combined = pd.concat([equity, factor_levels], axis=1)
+
+    if periods:
+        combined = combined.diff(periods)
+    return combined
+
+
+def correlation(
+        pnl: pd.DataFrame,
+        factor: pd.DataFrame = pd.DataFrame(),
+        periods: int | None = None,
+        method: Literal["pearson", "kendall", "spearman"] = "pearson",
+) -> pd.DataFrame:
+    """
+    Returns a correlation matrix between the pnls and the factors (if provided). If the periods is None it will be a
+    levels correlation as the pnl are converted to index. If periods is a number then it will be a change-on-change
+    correlation.
+
+    :param pnl: pd.DataFrame of PnLs
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :param method: method to use for the correlation, default is "pearson" but can be "kendall" or "spearman"
+    :return: pd.DataFrame of correlation matrix
+    """
+    combined = _prep_factor_correlation(pnl, factor, periods)
+    return combined.corr(method=method)
+
+
+def correlation_pvalues(
+        pnl: pd.DataFrame,
+        factor: pd.DataFrame,
+        periods: int | None = None,
+        method: Literal["pearson", "kendall", "spearman"] = "pearson",
+) -> pd.DataFrame:
+    """
+    Returns a correlation p-values matrix between the pnls and the factors (if provided).
+    If the periods is None it will be a levels correlation as the pnl are converted to index. If periods is a number
+    then it will be a change-on-change correlation
+
+    :param pnl: pd.DataFrame of PnLs
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :param method: method to use for the correlation, default is "pearson" but can be "kendall" or "spearman"
+    :return: pd.DataFrame of correlation matrix
+    """
+    combined = _prep_factor_correlation(pnl, factor, periods)
+    return statistics.correlation_pvalues(combined, method=method)

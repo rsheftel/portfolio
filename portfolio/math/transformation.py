@@ -252,3 +252,43 @@ def volatility_match(x: list | NDArray | pd.DataFrame | pd.Series,
         return list(res)
 
     return res
+
+
+def pnl_to_equity(
+        pnl: list | NDArray | pd.DataFrame | pd.Series, start_value: float | int = 100, start_index=None
+) -> list | NDArray | pd.DataFrame | pd.Series:
+    """
+    Create a time series of equity from an array of pnl.
+    If the start_index is supplied then the start_value will be added at that index level. For numpy anything other
+    than none in start_index will prepend the series with the start_value.
+    NaNs in the input will be treated as zero values to calculate the index
+
+    :param pnl: either pandas DataFrame or Series, or a numpy array
+    :param start_value: starting value of the series
+    :param start_index: if provided then the index for the start_value in the returned list
+    :return: same format as pnl parameter
+    """
+    if isinstance(pnl, pd.Series):
+        # preserve what returns were nan to populate the result with nans
+        nans = pnl.isna()
+        pnl = pnl.fillna(value=0)
+        res = pnl.cumsum() + start_value
+        res.loc[nans] = np.nan
+        if start_index is not None:
+            assert start_index < res.index.min(), "provided start_index is not less first element of existing index"
+            res.loc[start_index] = start_value
+        return res.sort_index()
+
+    if isinstance(pnl, pd.DataFrame):
+        res = {}
+        for column in pnl.columns:
+            res[column] = pnl_to_equity(pnl[column], start_index=start_index, start_value=start_value)
+        return pd.DataFrame(res)
+
+    # for numpy and lists
+    res = pnl_to_equity(pd.Series(pnl), start_value=start_value).values
+    if start_index:
+        res = np.insert(res, 0, start_value)
+    if isinstance(pnl, list):
+        res = list(res)
+    return res

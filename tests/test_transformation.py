@@ -12,7 +12,7 @@ from pandas.testing import assert_frame_equal, assert_series_equal
 import portfolio.math.base
 import portfolio.math.financial as financial
 import portfolio.math.transformation as transformation
-from testing import mock_time_series
+from portfolio.testing import mock_time_series
 
 # global variables
 data = {}
@@ -369,3 +369,63 @@ def test_volatility_match():
     actual = transformation.volatility_match(time_series_equity["dataframe"], time_series_equity["dataframe"]["px1"])
     expected = time_series_equity["dataframe"]["px1"].std()
     assert_almost_equal(actual.std().values, np.array([expected, expected]))
+
+
+def test_pnl_to_equity():
+    expected = [100.30, 99.93, 100.90, 100.51, 100.52, 101.18, 101.32, 101.00, 101.35, 100.79]
+    actual = transformation.pnl_to_equity(time_series_pnl["numpy"][:10], start_value=100)
+    assert_almost_equal(actual, expected, 5)
+
+    expected = [100.00, 100.30, 99.93, 100.90, 100.51, 100.52, 101.18, 101.32, 101.00, 101.35, 100.79]
+    actual = transformation.pnl_to_equity(time_series_pnl["numpy"][:10], start_value=100, start_index=True)
+    assert_almost_equal(actual, expected, 5)
+
+    expected = pd.Series(
+        [np.nan, 100.30, 99.93, 100.90, 100.51, 100.52, 101.18, 101.32, 101.00, 101.35], index=bdates[:10]
+    )
+    actual = transformation.pnl_to_equity(time_series_pnl["series"][:10], start_value=100)
+    assert_series_equal(actual, expected)
+
+    expected = pd.Series(
+        [np.nan, 100.30, 99.93, 100.90, 100.51, 100.52, 101.18, 101.32, 101.00, 101.35], index=bdates[:10]
+    )
+    expected[pd.Timestamp("2024-03-28")] = 100
+    expected = expected.sort_index()
+    actual = transformation.pnl_to_equity(
+        time_series_pnl["series"][:10], start_value=100, start_index=pd.Timestamp("2024-03-28")
+    )
+    assert_series_equal(actual, expected, check_freq=False)
+
+    expected = pd.DataFrame(
+        {
+            "px1": [np.nan, 100.79, 98.23, 102.39, 99.73, 99.11, 101.69, 101.72, 99.41, 100.46],
+            "px2": [np.nan, 100.79, 98.23, 102.39, 99.73, 99.11, 101.69, 101.72, 99.41, 100.46],
+        },
+        index=bdates[0:10],
+    )
+    actual = transformation.pnl_to_equity(time_series_pnl["dataframe"][:10], start_value=100)
+    assert_frame_equal(actual, expected, check_freq=False)
+
+    actual = transformation.pnl_to_equity(
+        time_series_pnl["dataframe"], start_value=100, start_index=pd.Timestamp("2024-03-28")
+    )
+    expected = pd.DataFrame(
+        {
+            "px1": [np.nan, 100.79, 98.23, 102.39, 99.73, 99.11, 101.69, 101.72, 99.41, 100.46],
+            "px2": [np.nan, 100.79, 98.23, 102.39, 99.73, 99.11, 101.69, 101.72, 99.41, 100.46],
+        },
+        index=bdates[:10],
+    )
+    expected.loc[pd.Timestamp('2024-03-28'), :] = 100
+    expected = expected.sort_index()
+    assert_frame_equal(actual[:11], expected, check_freq=False)
+
+    # nans in the returns are propagated through to the price index
+    expected = pd.DataFrame(
+        {
+            "px1": [110.12, 108.77, 108.4, 109.82, 107.36],
+            "px2": [np.nan, np.nan, 105.15, 106.57, 104.11],
+        },
+        index=bdates[-5:],
+    )
+    assert_frame_equal(actual[-5:], expected, check_freq=False)

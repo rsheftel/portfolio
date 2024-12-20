@@ -1,8 +1,38 @@
-from typing import Any
-
-import pandas as pd
 import datetime
+from io import StringIO
+from pathlib import Path
+from typing import Any, Iterable
+
+import numpy as np
+import pandas as pd
+import pandera as pa
+from pandas.api.types import (
+    is_bool_dtype,
+    is_datetime64_any_dtype,
+    is_integer_dtype,
+    is_numeric_dtype,
+    is_datetime64_dtype,
+    is_datetime64_ns_dtype,
+    is_datetime64tz_dtype,
+)
 from pandas.io.formats.style import Styler
+
+
+def make_iterable(variable, as_list: bool = False, none_returns_none: bool = False) -> Iterable | None:
+    """
+    Checks if the variable is an iterable, but not a string. If SO then it returns the variable, if not then it
+    makes the variable a single element list. Optionally can convert the variable to a list regardless.
+    :param variable: the variable to convert
+    :param as_list: will force a conversion to a list
+    :param none_returns_none: if the variable is None then will return None
+    :return: either the variable if it is an iterable, or a list (variable)
+    """
+    if none_returns_none and variable is None:
+        return None
+    if isinstance(variable, Iterable) and not isinstance(variable, (str, pd.DataFrame, pd.Series)):
+        return list(variable) if as_list else variable
+    else:
+        return [variable]
 
 
 def reindex_superset(
@@ -312,3 +342,152 @@ def percent_format(
     df = _prep_df(df)
     index_slice = _make_slice(columns, rows)
     return df.format(f"{{:.{precision}%}}", subset=index_slice)
+
+
+def read_csv_time_series(
+        filepath_or_buffer: str | Path | StringIO,
+        datetime_col: int | str = 0,
+        parser=None,
+        all_numeric: bool = True,
+        **kwargs,
+) -> pd.DataFrame:
+    """
+    Reads time series csv file into pd.DataFrame from a given file path or buffer and validates the schema. The format
+    of the file is the date or datetime in the first column and the time series data in the remaining columns.
+    Implements the pandas read_csv with a datetime parser now that that functionality is deprecated from the pandas
+    pacakge in v2.0.0. This will read a time series csv file and use the parser function to convert the dateime_col
+    to datetime and make that the index
+
+    :param filepath_or_buffer: File path, file-like object, or buffer
+    :param datetime_col: column name for the datetimes for column number as integer
+    :param parser: (optional) parser function to apply to the datetime string values to convert to datetimes
+    :param all_numeric: if True then will test to confirm all values are numeric
+    :param kwargs: Additional keyword arguments passed to `pd.read_csv`.
+    :return: A pandas DataFrame containing the processed and validated data
+    """
+    if parser:
+        df = pd.read_csv(filepath_or_buffer, **kwargs)
+        datetime_col = df.columns[datetime_col] if isinstance(datetime_col, int) else datetime_col
+        df[datetime_col] = parser(df[datetime_col].values)
+        df = df.set_index(datetime_col)
+    else:
+        df = pd.read_csv(filepath_or_buffer, index_col=[datetime_col], parse_dates=[datetime_col], **kwargs)
+    if all_numeric:
+        df = df.apply(pd.to_numeric, errors="coerce")
+        is_number = pa.Check(is_numeric_dtype, name="is_number")
+        is_datetime = pa.Check(
+            lambda x: is_datetime64_dtype(x) | is_datetime64_ns_dtype(x) | is_datetime64tz_dtype(x), name="is_datetime"
+        )
+        schema = pa.DataFrameSchema(
+            {col: pa.Column(checks=is_number, nullable=True) for col in df.columns},
+            index=pa.Index(checks=is_datetime),
+            unique_column_names=True,
+        )
+        schema(df)
+    return df
+
+
+def asof_next(x: pd.DataFrame | pd.Series, index: Any) -> Any | pd.Series:
+    """
+    Similar to the pandas "asof()" method but instead of returning the prior value if there is not an exact match
+    of the index, it returns the next value.
+
+    :param x: pd.DataFrame or pd.Series
+    :param index: index value to match
+    :return: pd.Series if pd.DataFrame provided as x, otherwise returns scalar
+    """
+    # test that it is a sorted
+    if not x.index.is_monotonic_increasing:
+        raise ValueError("asof_next requires a sorted index")
+
+    # backfill the data so a value of NaN for existing index value pulls from the next
+    x = x.copy().bfill()
+
+    # Find the exact match if exists
+    if index in x.index:
+        return x.loc[index]
+
+    # if it is beyond the end of the index
+    if index > x.index[-1]:
+        if isinstance(x, pd.Series):
+            return np.nan
+        else:
+            return pd.Series(np.nan, index=x.columns)
+
+    # If no exact match, find the next higher index
+    next_index = x.index[np.searchsorted(x.index, index, side="right")]
+
+    # Return the value at the next higher index
+    res = x.loc[next_index]
+    if isinstance(res, pd.Series):
+        res.name = index
+    return res
+
+
+def asof_prior(x: pd.DataFrame | pd.Series, index: Any) -> Any | pd.Series:
+    """
+    Wrapper to the pandas "asof()" method but instead of returning the prior value only if all values in the row are
+    NoN in the pandas asof(), this will treat each column separately and return the first non-NaN value, which means
+    that the values of a return Series for a DataFrame may be from different rows.
+
+    :param x: pd.DataFrame or pd.Series
+    :param index: index value to match
+    :return: pd.Series if pd.DataFrame provided as x, otherwise returns scalar
+    """
+    return x.ffill().asof(index)
+
+
+def index_from_df(df: pd.DataFrame) -> pd.Index | pd.MultiIndex:
+    """
+    Returns an Index or MultiIndex object from the dataframe provided. Each column is the index or multi-index
+    values and the row index labels are the index or multi-index names.
+    :param df: dataframe
+    :return: Index or MultiIndex
+    """
+    if len(df) == 0:
+        return pd.Index([])
+    if len(df) == 1:
+        return pd.Index(df.iloc[0, :])
+    return pd.MultiIndex.from_frame(df.T)
+
+
+def df_from_index(index: pd.Index | pd.MultiIndex) -> pd.DataFrame:
+    """
+    Returns a DataFrame representation of the contents of an Index or Multi-Index - Each column is the index or
+    multi-index values, and the row index labels are the index or multi-index names.
+
+    :param index: Index or MultiIndex
+    :return: pd.DataFrame
+    """
+    if len(index) == 0:
+        return pd.DataFrame()
+    return index.to_frame().reset_index(drop=True).T
+
+
+def add_index_levels(index: pd.Index | pd.MultiIndex, new_index_df: pd.DataFrame) -> pd.MultiIndex:
+    """
+    Add levels to a MultiIndex. The new_index_df is in the same format as the index_from_df() function parameter
+
+    :param index: original index to have the new values appended
+    :param new_index_df: DataFrame of new column names (index) and level values (cell) for each column
+    :return: pd.Index | pd.MultiIndex
+    """
+    orig = df_from_index(index)
+    # line up the column names so that concat works
+    new_index_df.index = orig.columns
+    return index_from_df(pd.concat([orig, new_index_df.T]))
+
+
+def prepend_index_level(df: pd.DataFrame, name: str, value: str) -> pd.DataFrame:
+    """
+    Adds an index level to MultiIndex columns only and prepends at the top level. The value will be repeated for
+    all the columns at that level
+
+    :param df: pd. DataFrame
+    :param name: name of the new index level
+    :param value: value of the index level
+    :return: pd. DataFrame
+    """
+    df.columns = add_index_levels(df.columns, pd.DataFrame({name: [value] * len(df.columns)}))
+    df.columns = df.columns.reorder_levels([name] + df.columns.names[:-1])
+    return df

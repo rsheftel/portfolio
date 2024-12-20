@@ -12,7 +12,7 @@ from pandas.testing import assert_series_equal
 from pytest import approx
 
 import portfolio.math.statistics as statutils
-from testing import mock_time_series
+from portfolio.testing import mock_time_series
 
 # GLOBAL VARIABLES
 

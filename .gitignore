@@ -115,10 +115,12 @@ venv.bak/
 .idea/pifq.iml
 .idea/jupyter-settings.xml
 .idea/sqldialects.xml
+.idea/deployment.xml
 .idea/.name
 
 # Generated files
 .idea/**/contentModel.xml
+.idea/**/Project_Default.xml
 
 # Sensitive or high-churn files
 .idea/**/dataSources/

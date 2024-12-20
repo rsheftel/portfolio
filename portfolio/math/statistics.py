@@ -3,7 +3,8 @@ Statistical and related functions
 """
 
 from math import sqrt
-from typing import Any
+from typing import Any, Literal
+from scipy.stats import linregress, ttest_1samp, ttest_ind, pearsonr, spearmanr, kendalltau
 
 import numpy as np
 import pandas as pd
@@ -413,3 +414,33 @@ def percentage_above(
 
     name = "percentage_above" if name is None else name
     return dispatch_calc(x, _calc, name=name)
+
+
+def correlation_pvalues(
+    df: pd.DataFrame, method: Literal["pearson", "kendall", "spearman"] = "pearson"
+) -> pd.DataFrame:
+    """
+    Returns a matrix of correlation p-values
+
+    :param df: pd.DataFrame of PnLs
+    :param method: method to use for the correlation, default is "pearson" but can be "kendall" or "spearman"
+    :return: pd.DataFrame of correlation p-values matrix
+    """
+    length = len(df.columns)
+    p_values = np.full((length, length), np.nan)
+    for i in range(length):
+        for j in range(i, length):
+            x = df.iloc[:, i]
+            y = df.iloc[:, j]
+            mask = ~np.logical_or(np.isnan(x), np.isnan(y))
+            if np.sum(mask) > 0:
+                if method == "pearson":
+                    p_values[i, j] = pearsonr(x[mask], y[mask])[1]
+                    p_values[j, i] = p_values[i, j]
+                elif method == "kendall":
+                    p_values[i, j] = kendalltau(x[mask], y[mask])[1]
+                    p_values[j, i] = p_values[i, j]
+                elif method == "spearman":
+                    p_values[i, j] = spearmanr(x[mask], y[mask])[1]
+                    p_values[j, i] = p_values[i, j]
+    return pd.DataFrame(p_values, columns=df.columns, index=df.columns)
