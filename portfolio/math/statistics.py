@@ -2,18 +2,17 @@
 Statistical and related functions
 """
 
-from math import sqrt
 from typing import Any, Literal
-from scipy.stats import linregress, ttest_1samp, ttest_ind, pearsonr, spearmanr, kendalltau
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from scipy.odr import Data, Model, ODR
-from scipy.stats import linregress, ttest_1samp, ttest_ind
+from scipy.stats import linregress, ttest_1samp, ttest_ind, pearsonr, spearmanr, kendalltau
 from sklearn.decomposition import PCA
 from wpca import WPCA
 
+from math import sqrt
 from portfolio.math.base import dropna, calc_exponential_function, dispatch_calc
 from portfolio.utils import reindex_superset
 
@@ -444,3 +443,150 @@ def correlation_pvalues(
                     p_values[i, j] = spearmanr(x[mask], y[mask])[1]
                     p_values[j, i] = p_values[i, j]
     return pd.DataFrame(p_values, columns=df.columns, index=df.columns)
+
+
+def percentage_non_zero(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+    """
+    Given a list or series calculate the percentage that are not zero dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :param threshold: threshold value
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        x = np.asarray(x)
+        x = dropna(x)
+        not_close_to_zero = ~np.isclose(x, 0, atol=1e-8, rtol=1e-5)
+        return np.count_nonzero(not_close_to_zero) / x.size
+
+    name = "percentage_non_zero" if name is None else name
+    return dispatch_calc(x, _calc, name=name)
+
+
+def round_down(number: int | float, digits: int = 0, base: int = 10) -> float:
+    """
+    Rounds down a given number to a specified number of decimal places or multiples of the base. This function ensures
+    that no rounding up occurs, and the resulting value is always less than or equal to the original number at the
+    specified precision. The digits parameter acts the same as the decimals parameter in the Python round() function.
+
+    :param number: The float number to be rounded down.
+    :param digits: The number of decimal places (if positive) or multiple places (if negative) to round down to
+    :param base: The base to round up to, defaults to 10.
+    :return: The resulting number after rounding down to the specified precision.
+    """
+    assert isinstance(digits, int), f"digits parameter must be an integer: {digits=}"
+    factor = base ** digits
+    if digits == 0:
+        return np.floor(number)
+    return np.floor(number * factor) / factor
+
+
+def round_up(number: int | float, digits: int = 0, base: int = 10) -> float:
+    """
+    Rounds up a given number to a specified number of decimal places or multiple of the base. This function ensures
+    that no rounding up occurs, and the resulting value is always less than or equal to the original number at the
+    specified precision. The digits parameter acts the same as the decimals parameter in the Python round() function.
+
+    example: round_up(123456789, 2) = 123456790
+
+    :param number: The float number to be rounded up.
+    :param digits: The number of decimal places (if positive) or multiple places (if negative) to round up to
+    :param base: The base to round up to, defaults to 10.
+    :return: The resulting number after rounding up to the specified precision.
+    """
+    assert isinstance(digits, int), f"digits parameter must be an integer: {digits=}"
+    factor = base ** digits
+    if digits == 0:
+        return np.ceil(number)
+    return np.ceil(number * factor) / factor
+
+
+def bin_list(
+        min_value: int | float,
+        max_value: int | float,
+        bins: int | list | NDArray = None,
+        digits: int = None,
+        bin_size: int = None,
+) -> list[float] | NDArray | int:
+    """
+    Return a list of bins or number of bins.
+
+    If bins are a list then will return those bins
+    If bins is an int then will use that many bins evenly spaced between the min and max of the series.
+    If bind_rounding is provided then the bins are ignored the bins will be the required number of bins from the min
+    to the max of the data rounded to that number of decimal places (if positive) or 10s places (if negative)
+    If bin_size is provided then the bins will be evenly spaced with that size.
+
+    :param min_value: min value of the bins
+    :param max_value: max value of the bins
+    :param bins: number of bins or list of bins
+    :param digits: number of decimal places (if positive) or multiple places (if negative) to round to
+    :param bin_size: size of the bins
+    :return: list | NDArray
+    """
+    assert min_value <= max_value, f"{min_value=} must be less than or equal to {max_value=}"
+    assert sum(
+        [bins is not None, digits is not None, bin_size is not None]
+    ) == 1, "only supply one of bins, digits or bin_size"
+    if bins is not None:
+        return bins
+
+    if digits is not None:
+        base = 10
+    else:
+        digits = -1
+        base = bin_size
+
+    max_value = round_up(max_value, digits, base)
+    min_value = round_down(min_value, digits, base)
+    factor = base ** (-digits)
+    bins = np.linspace(min_value, max_value, int((max_value - min_value) / factor + 1))
+    return bins
+
+
+def histogram(
+        x: list | NDArray | pd.Series | pd.DataFrame,
+        bins: int | list = None,
+        digits: int = None,
+        bin_size: int = None,
+        normalize: bool = True,
+) -> pd.Series | pd.DataFrame:
+    """
+    Given a list or series calculate the distribution into buckets.
+
+    If bins are a list then will use those bins, if bins is an int then will use that many bins evenly spaced between
+    the min and max of the series.
+
+    If digits is provided then the bins are ignored the bins will be the required number of bins from the min
+    to the max of the data rounded to that number of decimal places (if positive) or 10s places (if negative)
+
+    If bin_size is provided then the bins will be evenly spaced with that size.
+
+    If normalize is True then the counts will be expressed as a percentage of the non-nan total count.
+
+    :param x: and of a list, numpy array, pd.Series or pd.DataFrame
+    :param bins: number of bins or list of bins
+    :param digits: number of decimal places (if positive) or 10s places (if negative) to round to
+    :param bin_size: size of the bins
+    :param normalize: if True the counts will be expressed as a percentage of the non-nan total count
+    :return: pd.Series if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _series_calc(x, bins, name):
+        res = pd.cut(x, bins, include_lowest=True).value_counts(normalize=normalize).sort_index()
+        res.name = name
+        return res
+
+    if isinstance(x, pd.Series):
+        bins = bin_list(x.min(), x.max(), bins, digits, bin_size)
+        return _series_calc(x, bins, x.name)
+    elif isinstance(x, pd.DataFrame):
+        bins = bin_list(x.min().min(), x.max().max(), bins, digits, bin_size)
+        series = []
+        for col in x.columns:
+            series.append(_series_calc(x[col], bins, col))
+        return pd.concat(series, axis=1)
+    else:
+        return histogram(pd.Series(x), bins, digits, bin_size, normalize)

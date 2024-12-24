@@ -2,16 +2,15 @@
 Tests for the statistics module
 """
 
-from math import sqrt
-
 import numpy as np
 import pandas as pd
 import pytest
-from numpy.testing import assert_almost_equal
-from pandas.testing import assert_series_equal
+from numpy.testing import assert_almost_equal, assert_array_equal
+from pandas.testing import assert_series_equal, assert_frame_equal
 from pytest import approx
 
 import portfolio.math.statistics as statutils
+from math import sqrt
 from portfolio.testing import mock_time_series
 
 # GLOBAL VARIABLES
@@ -586,3 +585,274 @@ def test_observations_count():
     expected = pd.Series([2, 1], index=["first", "second"], name="observations_count")
     actual = statutils.observations_count(df)
     assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "x, expected",
+    [
+        ([1, 2, 0, 3], 75.0),  # 3 out of 4 values are non-zero
+        ([0, 0, 0, 0], 0.0),  # no non-zero values
+        ([1, 2, 3, 4], 100.0),  # all values are non-zero
+    ],
+)
+def test_percentage_non_zero_list(x, expected):
+    actual = statutils.percentage_non_zero(x)
+    assert_almost_equal(actual * 100, expected)
+
+
+@pytest.mark.parametrize(
+    "x, expected",
+    [
+        (np.array([1, 2, 0.00000000001, 3]), 75.0),  # 3 out of 4 values are non-zero
+        (np.array([0, 0, 0, 0]), 0.0),  # no non-zero values
+        (np.array([1, 2, 3, 4]), 100.0),  # all values are non-zero
+    ],
+)
+def test_percentage_non_zero_ndarray(x, expected):
+    actual = statutils.percentage_non_zero(x)
+    assert_almost_equal(actual * 100, expected)
+
+
+@pytest.mark.parametrize(
+    "x, expected",
+    [
+        (pd.Series([1, 2, 0, 3]), 75.0),  # 3 out of 4 values are non-zero
+        (pd.Series([0, 0, 0, 0]), 0.0),  # no non-zero values
+        (pd.Series([1, 2, 3, 4]), 100.0),  # all values are non-zero
+    ],
+)
+def test_percentage_non_zero_series(x, expected):
+    actual = statutils.percentage_non_zero(x)
+    assert_almost_equal(actual * 100, expected)
+
+
+def test_percentage_non_zero_dataframe():
+    df = pd.DataFrame({"col1": [1, 2, 0, 3], "col2": [0, 0, 3, 4]})
+    actual = statutils.percentage_non_zero(df, name="custom_name")
+    expected = pd.Series({"col1": 75.0, "col2": 50.0}, name="custom_name")
+    assert_series_equal(actual * 100, expected)
+
+
+@pytest.mark.parametrize(
+    "x, expected",
+    [
+        ([1, 2, 0, np.nan], 66.67),  # ignores NaN, 2 out of 3 are non-zero
+        (np.array([0, 0, np.nan, 0]), 0.0),  # all zeros after ignoring NaN
+        (pd.Series([np.nan, 0, 3, np.nan]), 50.0),  # 1 out of 2 is non-zero after ignoring NaN
+    ],
+)
+def test_percentage_non_zero_with_nans(x, expected):
+    actual = statutils.percentage_non_zero(x)
+    assert_almost_equal(actual * 100, expected, decimal=2)
+
+
+@pytest.mark.parametrize(
+    "number, digits, base, expected",
+    [
+        (123.456, 2, 10, 123.45),
+        (123.456, 1, 10, 123.4),
+        (123.456, 0, 10, 123.0),
+        (129.456, -1, 10, 120.0),
+        (120.456, -2, 10, 100.0),
+        (-123.456, 2, 10, -123.46),
+        (-123.456, 1, 10, -123.5),
+        (-123.456, 0, 10, -124.0),
+        (-123.456, -1, 10, -130.0),
+        (-123.456, -2, 10, -200.0),
+        (0.0, 2, 10, 0.0),
+        (0.0, -2, 10, 0.0),
+        (30, -1, 25, 25),
+        (5, -1, 25, 0),
+        (-5, -1, 25, -25),
+    ],
+)
+def test_round_down(number, digits, base, expected):
+    actual = statutils.round_down(number, digits, base)
+    assert actual == pytest.approx(expected, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    "number, digits, base, expected",
+    [
+        (123.456, 2, 10, 123.46),
+        (123.456, 1, 10, 123.5),
+        (123.456, 0, 10, 124.0),
+        (129.456, -1, 10, 130.0),
+        (120.456, -2, 10, 200.0),
+        (-123.456, 2, 10, -123.45),
+        (-123.456, 1, 10, -123.4),
+        (-123.456, 0, 10, -123.0),
+        (-123.456, -1, 10, -120.0),
+        (-123.456, -2, 10, -100.0),
+        (0.0, 2, 10, 0.0),
+        (0.0, -2, 10, 0.0),
+        (30, -1, 25, 50),
+        (5, -1, 25, 25),
+        (-5, -1, 25, 0),
+    ],
+)
+def test_round_up(number, digits, base, expected):
+    actual = statutils.round_up(number, digits, base)
+    assert actual == pytest.approx(expected, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    "min_value, max_value, bins, digits, bin_size, expected",
+    [
+        (0, 10, [0, 2, 4, 6, 8, 10], None, None, [0, 2, 4, 6, 8, 10]),
+        (0, 10, 5, None, None, 5),
+        (0, 10, None, 0, None, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+        (
+                1.5,
+                2.5,
+                None,
+                1,
+                None,
+                [
+                    1.5,
+                    1.6,
+                    1.7,
+                    1.8,
+                    1.9,
+                    2.0,
+                    2.1,
+                    2.2,
+                    2.3,
+                    2.4,
+                    2.5,
+                ],
+        ),
+        (2, 8, None, -1, None, [0, 10]),
+        (25, 85, None, -1, None, [20, 30, 40, 50, 60, 70, 80, 90]),
+        (6, 125, None, None, 25, [0, 25, 50, 75, 100, 125]),
+    ],
+)
+def test_bin_list(min_value, max_value, bins, digits, bin_size, expected):
+    actual = statutils.bin_list(min_value=min_value, max_value=max_value, bins=bins, bin_size=bin_size, digits=digits)
+    assert_array_equal(actual, expected)
+
+
+def test_bin_list_errors():
+    with pytest.raises(AssertionError, match="min_value=.* must be less than or equal to max_value=.*"):
+        statutils.bin_list(min_value=10, max_value=0, bins=5)
+    with pytest.raises(AssertionError, match="only supply one of bins, digits or bin_size"):
+        statutils.bin_list(min_value=0, max_value=10, bins=5, digits=2)
+
+
+@pytest.mark.parametrize(
+    "x, bins, normalize, expected",
+    [
+        (
+                [1, 2, 2, 3, 3, 3],
+                3,
+                True,
+                pd.Series(
+                    [0.1667, 0.3333, 0.5],
+                    index=pd.CategoricalIndex(
+                        pd.IntervalIndex.from_tuples([(0.997, 1.667), (1.667, 2.333), (2.333, 3.0)]), ordered=True
+                    ),
+                ),
+        ),
+        (
+                [1, 2, 3, 4, 5],
+                [0, 2, 4, 6],
+                False,
+                pd.Series(
+                    [2, 2, 1],
+                    index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 2), (2, 4), (4, 6)]),
+                                              ordered=True),
+                ),
+        ),
+    ],
+)
+def test_histogram_list(x, bins, normalize, expected):
+    actual = statutils.histogram(x, bins=bins, normalize=normalize)
+    assert_series_equal(actual, expected, atol=0.0001, check_dtype=False)
+
+
+@pytest.mark.parametrize(
+    "x, bins, normalize, expected",
+    [
+        (
+                pd.Series([1, 2, 2, 3, 3, 3]),
+                3,
+                True,
+                pd.Series(
+                    [0.1667, 0.3333, 0.5],
+                    index=pd.CategoricalIndex(
+                        pd.IntervalIndex.from_tuples([(0.997, 1.667), (1.667, 2.333), (2.333, 3.0)]), ordered=True
+                    ),
+                ),
+        ),
+        (
+                pd.Series([1, 2, 3, 4]),
+                [0, 2, 4],
+                False,
+                pd.Series(
+                    [2, 2],
+                    index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 2), (2, 4)]), ordered=True),
+                ),
+        ),
+    ],
+)
+def test_histogram_series(x, bins, normalize, expected):
+    actual = statutils.histogram(x, bins=bins, normalize=normalize)
+    assert_series_equal(actual, expected, atol=0.0001, check_dtype=False)
+
+
+@pytest.mark.parametrize(
+    "x, bins, normalize, expected",
+    [
+        (
+                pd.DataFrame({"A": [1, 2, 3], "B": [2, 2, 4]}),
+                [0, 2, 4],
+                True,
+                pd.DataFrame(
+                    {
+                        "A": pd.Series(
+                            [0.6667, 0.3333],
+                            index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 2), (2, 4)]),
+                                                      ordered=True),
+                        ),
+                        "B": pd.Series(
+                            [0.6667, 0.3333],
+                            index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 2), (2, 4)]),
+                                                      ordered=True),
+                        ),
+                    }
+                ),
+        )
+    ],
+)
+def test_histogram_dataframe(x, bins, normalize, expected):
+    actual = statutils.histogram(x, bins=bins, normalize=normalize)
+    assert_frame_equal(actual, expected, atol=0.0001, check_dtype=False)
+
+
+@pytest.mark.parametrize(
+    "x, bin_size, normalize, expected",
+    [
+        (
+                pd.DataFrame({"A": [1, 20, 30, 25], "B": [21, 27, 40, 50]}),
+                25,
+                True,
+                pd.DataFrame(
+                    {
+                        "A": pd.Series(
+                            [0.75, 0.25],
+                            index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 25), (25, 50)]),
+                                                      ordered=True),
+                        ),
+                        "B": pd.Series(
+                            [0.25, 0.75],
+                            index=pd.CategoricalIndex(pd.IntervalIndex.from_tuples([(-0.001, 25), (25, 50)]),
+                                                      ordered=True),
+                        ),
+                    }
+                ),
+        )
+    ],
+)
+def test_histogram_bin_size(x, bin_size, normalize, expected):
+    actual = statutils.histogram(x, bin_size=bin_size, normalize=normalize)
+    assert_frame_equal(actual, expected, atol=0.0001, check_dtype=False)
