@@ -644,60 +644,25 @@ def test_add_factors_to_drawdown_details():
 
     expected = pd.DataFrame(
         [
-            [
-                0.000000,
-                0.000000,
-                1.123367,
-                0.319755,
-            ],
-            [
-                0.483822,
-                0.331674,
-                0.762334,
-                -1.597426,
-            ],
-            [
-                0.600429,
-                -0.222345,
-                0.223687,
-                0.000000,
-            ],
-            [
-                0.000000,
-                0.000000,
-                -0.471285,
-                -0.839049,
-            ],
-            [
-                1.564399,
-                -1.115518,
-                1.615720,
-                0.144655,
-            ],
-            [
-                -0.922802,
-                -0.803806,
-                -0.261760,
-                -0.190993,
-            ],
-            [
-                2.008487,
-                0.182250,
-                2.517570,
-                0.903297,
-            ],
-            [
-                1.609416,
-                0.384067,
-                1.336126,
-                0.298627,
-            ],
+            [-1.075184, -0.754044, 0.762334, -1.597426],
+            [1.786440, 0.030281, 0.223687, 0.000000],
+            [-0.090987, -0.222345, -0.471285, -0.839049],
+            [0.409197, -1.115518, 1.615720, 0.144655],
+            [-0.059422, -0.595108, -0.261760, -0.190993],
+            [0.617332, 0.182250, 2.517570, 0.903297],
+            [0.158086, -0.233465, 1.336126, 0.298627],
         ],
-        index=list(range(4, 12)),
+        index=list(range(5, 12)),
     )
-    columns = pd.MultiIndex.from_tuples([('factor_change_start_to_max', 'fac1'), ('factor_change_start_to_max', 'fac2'),
-                                         ('factor_change_max_to_end', 'fac1'), ('factor_change_max_to_end', 'fac2')],
-                                        names=['factor_change', 0])
+    columns = pd.MultiIndex.from_tuples(
+        [
+            ("factor_change_start_to_max", "fac1"),
+            ("factor_change_start_to_max", "fac2"),
+            ("factor_change_max_to_end", "fac1"),
+            ("factor_change_max_to_end", "fac2"),
+        ],
+        names=["factor_change", 0],
+    )
     expected.columns = columns
 
-    assert_frame_equal(actual.loc[list(range(4, 12)), columns], expected)
+    assert_frame_equal(actual.loc[list(range(5, 12)), columns], expected)

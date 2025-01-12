@@ -8,7 +8,7 @@ from pandas.testing import assert_series_equal, assert_frame_equal
 from pytest import approx
 
 from portfolio.math import financial
-from portfolio.math.transformation import price_index
+from portfolio.math.transformation import price_index, to_returns
 from portfolio.testing import mock_time_series
 
 time_series_equity: dict = {}
@@ -385,3 +385,113 @@ def test_calmar_ratio():
     expected = pd.Series({"px": 3.430906491, "nans": 5.082554087}, name="calmar_ratio")
     actual = financial.returns.calmar_ratio(time_series_returns['dataframe'])
     assert_series_equal(actual, expected)
+
+
+def test_factor_correlation():
+    x_1 = mock_time_series(500, 0.1, drift=0.1, seed=123)
+    x_2 = mock_time_series(500, 0.15, drift=0.2, auto_regress=0.1, seed=456)
+    levels = pd.DataFrame({"x1": x_1, "x2": x_2}, pd.bdate_range("2024-01-01", periods=500))
+    returns = to_returns(levels)
+
+    x_1 = mock_time_series(500, 0.05, drift=0.15, auto_regress=0.5, seed=123)
+    x_2 = mock_time_series(500, 0.15, drift=0.02, auto_regress=0.1, seed=456)
+    factor = pd.DataFrame({"factor1": x_1, "factor2": x_2}, pd.bdate_range("2024-01-01", periods=500))
+
+    # levels correlation
+    names = ["x1", "x2", "factor1", "factor2"]
+    expected = pd.DataFrame(
+        [
+            [1, 0.998550, 0.999541, 0.946753],
+            [0.998550, 1, 0.999317, 0.957257],
+            [0.999541, 0.999317, 1, 0.947426],
+            [0.946753, 0.957257, 0.947426, 1],
+        ],
+        columns=names,
+        index=names,
+    )
+    actual = financial.returns.correlation(returns, factor)
+    assert_frame_equal(actual, expected)
+
+    # 5 day change on change
+    names = ["x1", "x2", "factor1", "factor2"]
+    expected = pd.DataFrame(
+        [
+            [1, 0.090731849, 0.857191888, 0.073698409],
+            [0.090731849, 1, 0.107814111, 0.975452303],
+            [0.857191888, 0.107814111, 1, 0.069018057],
+            [0.073698409, 0.975452303, 0.069018057, 1],
+        ],
+        columns=names,
+        index=names,
+    )
+    actual = financial.returns.correlation(returns, factor, periods=5)
+    assert_frame_equal(actual, expected)
+
+
+def test_correlation_pvalues():
+    x_1 = mock_time_series(500, 0.1, drift=0.1, seed=123)
+    x_2 = mock_time_series(500, 0.15, drift=0.2, auto_regress=0.1, seed=456)
+    levels = pd.DataFrame({"x1": x_1, "x2": x_2}, pd.bdate_range("2024-01-01", periods=500))
+    returns = to_returns(levels)
+
+    x_1 = mock_time_series(500, 0.05, drift=0.15, auto_regress=0.5, seed=123)
+    x_2 = mock_time_series(500, 0.15, drift=0.02, auto_regress=0.1, seed=456)
+    factor = pd.DataFrame({"factor1": x_1, "factor2": x_2}, pd.bdate_range("2024-01-01", periods=500))
+
+    # 5 day change on change
+    names = ["x1", "x2", "factor1", "factor2"]
+    expected = pd.DataFrame(
+        [
+            [0, 0.043620851, 0, 0.101817641],
+            [0.043620851, 0, 0.016520498, 0],
+            [0, 0.016520498, 0, 0.125152288],
+            [0.101817641, 0, 0.125152288, 0],
+        ],
+        columns=names,
+        index=names,
+    )
+    actual = financial.returns.correlation_pvalues(returns, factor, periods=5)
+    assert_frame_equal(actual, expected)
+
+
+def test_add_factors_to_drawdown_details():
+    x = pd.Series(
+        mock_time_series(100, 0.20, auto_regress=0.1, drift=0.10, seed=405),
+        index=pd.bdate_range("2024-01-01", periods=100),
+    )
+    drawdowns = financial.pnl.drawdown_details(x.diff())
+
+    factors = pd.DataFrame(
+        {
+            "fac1": mock_time_series(50, 0.20, auto_regress=0.1, drift=0.10, seed=505),
+            "fac2": mock_time_series(50, 0.10, auto_regress=-0.1, drift=-0.10, seed=505, nans=20),
+        },
+        index=pd.bdate_range("2024-02-01", periods=50),
+    )
+
+    actual = financial.returns.add_factors_to_drawdown_details(drawdowns, factors)
+
+    expected = pd.DataFrame(
+        [
+            [-0.010632, -0.007516, 0.007620, -0.016044],
+            [0.017721, 0.000309, 0.002180, 0.000000],
+            [-0.000885, -0.002264, -0.004588, -0.008562],
+            [0.004002, -0.011383, 0.015737, 0.001493],
+            [-0.000570, -0.006133, -0.002512, -0.001981],
+            [0.005938, 0.001894, 0.024073, 0.009368],
+            [0.001508, -0.002436, 0.012726, 0.003124],
+        ],
+        index=list(range(5, 12)),
+    )
+    columns = pd.MultiIndex.from_tuples(
+        [
+            ("factor_change_start_to_max", "fac1"),
+            ("factor_change_start_to_max", "fac2"),
+            ("factor_change_max_to_end", "fac1"),
+            ("factor_change_max_to_end", "fac2"),
+        ],
+        names=["factor_change", 0],
+    )
+    expected.columns = columns
+
+    assert_frame_equal(actual.loc[list(range(5, 12)), columns], expected, atol=0.000001)

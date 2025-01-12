@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+import portfolio.utils as pdutils
 from portfolio.math.base import dispatch_calc, dropna
 from portfolio.math.statistics import (
     mean_exp_weighted,
@@ -15,7 +16,6 @@ from portfolio.math.statistics import (
     downside_deviation,
     downside_deviation_exp_weighted
 )
-import portfolio.utils as pdutils
 
 
 def sharpe(
@@ -452,27 +452,44 @@ def plunge_ratio_exp_weighted(
     return dispatch_calc(x, _calc, name="plunge_ratio_exponential_weighted", as_series=True)
 
 
-def add_factors_to_drawdown_details(drawdown_details_df: pd.DataFrame, factors: pd.DataFrame) -> pd.DataFrame:
+def add_factors_to_drawdown_details(
+        drawdown_details_df: pd.DataFrame, factors: pd.DataFrame, as_percent: bool = False
+) -> pd.DataFrame:
     """
     Adds factors information to the drawdown details dataframe and return the new drawdown details dataframe.
     The factors should be levels.
 
     :param drawdown_details_df: pd.DataFrame containing drawdown details in the form returned by drawdown_details()
     :param factors: pd.DataFrame of time series of factor levels
+    :param as_percent: if True will calculate the factor changes as percentages, otherwise will calculate as absolute
     :return: pd.DataFrame
     """
     drawdown_details_df = drawdown_details_df.copy()
     start_to_maxs = []
     max_to_ends = []
 
+    # this requires that the drawdown dates and the factors can be synchronized, which will only work if both are
+    # of type pd.TimeStamp
+    assert all(
+        [isinstance(x, pd.Timestamp) for x in drawdown_details_df["start"]]
+    ), "can only add factors to drawdown details if the drawdown dates are of type pd.TimeStamp"
+
     # calculate the values of the factor changes for each row
+    # since the items that calculate the drawdown are pnl or returns, the first observation that the series is in a
+    # drawdown is when the change from the prior period to the current is negative. Since the factors are provided
+    # as levels, the change in the factor must be from the same day prior to the start of the drawdown
+    start_offset = pd.tseries.offsets.Nano()
     for row in drawdown_details_df.itertuples():
-        start_factors = pdutils.asof_prior(factors, row.start).values
+        start_factors = pdutils.asof_prior(factors, row.start - start_offset).values
         max_index_factors = pdutils.asof_next(factors, row.max_index).values
         end_factors = pdutils.asof_next(factors, row.end).values
 
-        start_to_maxs.append(max_index_factors - start_factors)
-        max_to_ends.append(end_factors - max_index_factors)
+        if as_percent:
+            start_to_maxs.append(max_index_factors / start_factors - 1)
+            max_to_ends.append(end_factors / max_index_factors - 1)
+        else:
+            start_to_maxs.append(max_index_factors - start_factors)
+            max_to_ends.append(end_factors - max_index_factors)
 
     # turn the row calculations into a pd.DataFrame
     start_to_max = pd.DataFrame(start_to_maxs, columns=factors.columns)

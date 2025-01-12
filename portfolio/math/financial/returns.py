@@ -2,11 +2,12 @@
 Financial math functions like Sharpe based on percentage return time series
 """
 
+from math import sqrt
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-from math import sqrt
-
 from scipy import stats
 
 from portfolio.math import transformation, statistics
@@ -265,3 +266,97 @@ def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: i
         return avg_annual / abs(max_drawdown)
 
     return dispatch_calc(x, _calc, name="calmar_ratio", as_series=True)
+
+
+def _prep_factor_correlation(
+        returns: pd.DataFrame,
+        factor: pd.DataFrame,
+        periods: int | None = None,
+) -> pd.DataFrame:
+    """
+    prepare the DataFrames for correlation
+
+    :param returns: pd.DataFrame of returns
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :return: concatenated and differenced pd.DataFrame
+    """
+    # check the column names are unique
+    assert (
+            len(returns.columns.intersection(factor.columns)) == 0
+    ), "duplicate columns in data and factors"
+
+    # create the levels for both and combine
+    equity = price_index(returns, start_index=prior_index(returns))
+    factor_levels = factor.copy()
+    combined = pd.concat([equity, factor_levels], axis=1)
+
+    if periods:
+        combined = combined.pct_change(periods, fill_method=None)
+    return combined
+
+
+def correlation(
+        returns: pd.DataFrame,
+        factor: pd.DataFrame = pd.DataFrame(),
+        periods: int | None = None,
+        method: Literal["pearson", "kendall", "spearman"] = "pearson",
+) -> pd.DataFrame:
+    """
+    Returns a correlation matrix between the returns and the factors (if provided). If the periods is None it will be a
+    levels correlation as the pnl are converted to index. If periods is a number then it will be a change-on-change
+    correlation. To compute the correlations, the returns are converted to a price index assuming compounding of
+    returns. If the factors are converted to change-on-change then it will be a percentage change to be consistent
+    with the returns.
+
+    :param returns: pd.DataFrame of returns
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :param method: method to use for the correlation, default is "pearson" but can be "kendall" or "spearman"
+    :return: pd.DataFrame of correlation matrix
+    """
+    combined = _prep_factor_correlation(returns, factor, periods)
+    return combined.corr(method=method)
+
+
+def correlation_pvalues(
+        returns: pd.DataFrame,
+        factor: pd.DataFrame,
+        periods: int | None = None,
+        method: Literal["pearson", "kendall", "spearman"] = "pearson",
+) -> pd.DataFrame:
+    """
+    Returns a correlation p-values matrix between the pnls and the factors (if provided).
+    If the periods is None it will be a levels correlation as the pnl are converted to index.
+    If periods is a number then it will be a change-on-change correlation. To compute the correlations, the returns are
+    converted to a price index assuming compounding of returns. If the factors are converted to change-on-change then
+    they will be a percentage change to be consistent with the returns.
+
+    :param returns: pd.DataFrame of returns
+    :param factor: pd.DataFrame of factor levels, if empty will be just the pnl correlations
+    :param periods: if None will return a level-on-level correlation, if a number will return a change-on-change
+        correlation
+    :param method: method to use for the correlation, default is "pearson" but can be "kendall" or "spearman"
+    :return: pd.DataFrame of correlation matrix
+    """
+    combined = _prep_factor_correlation(returns, factor, periods)
+    return statistics.correlation_pvalues(combined, method=method)
+
+
+def add_factors_to_drawdown_details(
+        drawdown_details_df: pd.DataFrame, factors: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Adds factors information to the drawdown details dataframe and return the new drawdown details dataframe.
+    The factors should be levels. The changes in the factors will be expressed as percentage changes.
+
+    :param drawdown_details_df: pd.DataFrame containing drawdown details in the form returned by drawdown_details()
+    :param factors: pd.DataFrame of time series of factor levels
+    :param as_percent: if True will calculate the factor changes as percentages, otherwise will calculate as absolute
+    :return: pd.DataFrame
+    """
+    return common.add_factors_to_drawdown_details(
+        drawdown_details_df, factors, as_percent=True
+    )
