@@ -10,6 +10,19 @@ import pandas as pd
 from numpy.typing import NDArray
 
 
+def none_to_nan(x: pd.DataFrame | pd.Series | NDArray | list) -> pd.DataFrame | pd.Series | NDArray:
+    """
+    Converts None to nan
+
+    :param x: pd.DataFrame | pd.Series | NDArray | list
+    :return: the same datatype as the input, except lists will be returned as NDArray
+    """
+    if isinstance(x, (pd.DataFrame, pd.Series)):
+        return x.fillna(np.nan)
+    x = np.asanyarray(x)
+    return np.where(x == None, np.nan, x).astype(float)  # noqa
+
+
 @cache
 def exponential_weights(window_length, half_life):
     """

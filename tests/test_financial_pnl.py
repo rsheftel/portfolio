@@ -32,13 +32,20 @@ x_nan[[-10, -20, -30, -40]] = np.nan
 x_nan2[[-5, -15, -25, -35]] = np.nan
 time_series_nan_series = pd.Series(x_nan, index=dates)
 time_series_nan_df = pd.DataFrame(
-    {"px1": x_nan, "px2": x_nan2}, index=pd.date_range("2024-01-01", periods=100, freq="1D")
+    {"px1": x_nan, "px2": x_nan2},
+    index=pd.date_range("2024-01-01", periods=100, freq="1D"),
 )
+time_series_all_nan_df = pd.DataFrame(
+    {"nan": [np.nan] * 5, "None": [None] * 5}, index=pd.date_range("2024-01-01", periods=5)
+)
+time_series_all_zero_series = pd.Series([0.0] * 5, index=pd.date_range("2024-01-01", periods=5))
 time_series_nan_list = [
     (list(x_nan), "float"),
     (np.array(x_nan), "float"),
-    (time_series_nan_series, "float"),
+    (time_series_nan_series, "flfoat"),
     (time_series_nan_df, "pd.Series"),
+    (time_series_all_nan_df, "nan"),
+    (time_series_all_zero_series, "zeros"),
 ]
 
 # time series with trend and nan
@@ -55,7 +62,8 @@ def test_risk_capital():
     ser = time_series_01_series.diff()[1:]
     risk = base.rolling(ser, np.std, window=20, min_periods=1)
     expected = pd.Series(
-        [28.596228, 26.850219, 26.195138, 25.881337, 25.737076], index=pd.date_range("2024-04-05", periods=5)
+        [28.596228, 26.850219, 26.195138, 25.881337, 25.737076],
+        index=pd.date_range("2024-04-05", periods=5),
     )
     actual = financial.pnl.risk_capital(risk, 0.10, rebalance_freq="D")
     assert_series_equal(actual[-5:], expected)
@@ -126,6 +134,17 @@ def test_sharpe_nan(x, return_type):
         expected = pd.Series({"px1": 0.518755872, "px2": 0.298978202}, name="sharpe")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sharpe")
+        actual = financial.pnl.sharpe(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.sharpe(x)
+        assert np.isnan(actual)
+
 
 @pytest.mark.parametrize("x, return_type", time_series_01_list)
 def test_sharpe_exp_weighted(x, return_type):
@@ -140,7 +159,10 @@ def test_sharpe_exp_weighted(x, return_type):
         print("testing return_type = pd.Series")
         x = x.diff(1)  # make it a change series from levels
         actual = financial.pnl.sharpe_exp_weighted(x, 90, 20)
-        expected = pd.Series({"px1": -0.084543393, "px2": -0.084543393}, name="sharpe_exponential_weighted")
+        expected = pd.Series(
+            {"px1": -0.084543393, "px2": -0.084543393},
+            name="sharpe_exponential_weighted",
+        )
         assert_series_equal(actual, expected)
 
 
@@ -160,6 +182,17 @@ def test_sharpe_exp_weighted_nan(x, return_type):
         expected = pd.Series({"px1": 0.05743569, "px2": -0.50406652}, name="sharpe_exponential_weighted")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sharpe_exponential_weighted")
+        actual = financial.pnl.sharpe_exp_weighted(x, 5, 2)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.sharpe_exp_weighted(x, 5, 2)
+        assert np.isnan(actual)
+
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
 def test_sortino_nan(x, return_type):
@@ -177,6 +210,17 @@ def test_sortino_nan(x, return_type):
         expected = pd.Series({"px1": 0.878547274, "px2": 0.503027598}, name="sortino")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sortino")
+        actual = financial.pnl.sortino(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.sortino(x)
+        assert np.isnan(actual)
+
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
 def test_sortino_exp_weighted_nan(x, return_type):
@@ -191,8 +235,22 @@ def test_sortino_exp_weighted_nan(x, return_type):
         print("testing return_type = pd.Series")
         x = x.diff(1)  # make it a change series from levels
         actual = financial.pnl.sortino_exp_weighted(x, 50, 15)
-        expected = pd.Series({"px1": 0.104071185, "px2": -0.894089054}, name="sortino_exponential_weighted")
+        expected = pd.Series(
+            {"px1": 0.104071185, "px2": -0.894089054},
+            name="sortino_exponential_weighted",
+        )
         assert_series_equal(actual, expected)
+
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sortino_exponential_weighted")
+        actual = financial.pnl.sortino_exp_weighted(x, 5, 2)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.sortino_exp_weighted(x, 5, 2)
+        assert np.isnan(actual)
 
 
 @pytest.mark.parametrize("x, return_type", time_series_01_list)
@@ -228,6 +286,17 @@ def test_conditional_sortino_nan(x, return_type):
         expected = pd.Series({"px1": 0.501839, "px2": 0.286071}, name="conditional_sortino")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="conditional_sortino")
+        actual = financial.pnl.conditional_sortino(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.conditional_sortino(x)
+        assert np.isnan(actual)
+
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
 def test_conditional_sortino_exp_weighted_nan(x, return_type):
@@ -243,9 +312,21 @@ def test_conditional_sortino_exp_weighted_nan(x, return_type):
         x = x.diff(1)  # make it a change series from levels
         actual = financial.pnl.conditional_sortino_exp_weighted(x, 50, 15)
         expected = pd.Series(
-            {"px1": 0.063263295, "px2": -0.5391126485}, name="conditional_sortino_exponential_weighted"
+            {"px1": 0.063263295, "px2": -0.5391126485},
+            name="conditional_sortino_exponential_weighted",
         )
         assert_series_equal(actual, expected)
+
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="conditional_sortino_exponential_weighted")
+        actual = financial.pnl.conditional_sortino_exp_weighted(x, 5, 2)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.conditional_sortino_exp_weighted(x, 5, 2)
+        assert np.isnan(actual)
 
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
@@ -263,6 +344,17 @@ def test_r_square_nan(x, return_type):
         expected = pd.Series({"px1": 0.69287427, "px2": 0.54591477}, name="r_squared")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="r_squared")
+        actual = financial.pnl.r_squared(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.r_squared(x)
+        assert actual == 0.0
+
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
 def test_k_ratio_nan(x, return_type):
@@ -279,6 +371,17 @@ def test_k_ratio_nan(x, return_type):
         expected = pd.Series({"px1": 1.49362289, "px2": 1.09688972}, name="k_ratio")
         assert_series_equal(actual, expected)
 
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="k_ratio")
+        actual = financial.pnl.k_ratio(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.k_ratio(x)
+        assert np.isnan(actual)
+
 
 @pytest.mark.parametrize("x, return_type", time_series_nan_list)
 def test_omega_ratio_nan(x, return_type):
@@ -294,6 +397,17 @@ def test_omega_ratio_nan(x, return_type):
         actual = financial.pnl.omega_ratio(x)
         expected = pd.Series({"px1": 1.08967954, "px2": 1.05054107}, name="omega_ratio")
         assert_series_equal(actual, expected)
+
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="omega_ratio")
+        actual = financial.pnl.omega_ratio(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.omega_ratio(x)
+        assert np.isnan(actual)
 
 
 def test_robustness():
@@ -312,61 +426,45 @@ def test_robustness():
 def test_underwater_equity():
     expected_start = pd.Series([0, -0.37, 0, -0.39, -0.38, 0, 0, -0.32, 0, -0.56, 0, 0, 0, -0.78, -0.11])
     expected_end = pd.Series(
-        [
-            -0.20,
-            -0.20,
-            0.0,
-            0.0,
-            -0.07,
-            0.0,
-            -0.26,
-            -0.27,
-            -0.31,
-            -0.03,
-            -0.03,
-            -0.03,
-            0.0,
-            0.0,
-            -0.36,
-        ],
+        [-0.20, -0.20, 0.0, 0.0, -0.07, 0.0, -0.26, -0.27, -0.31, -0.03, -0.03, -0.03, 0.0, 0.0, -0.36],
         pd.RangeIndex(start=84, stop=99, step=1),
     )
 
     # as a numpy array
     x = time_series_trend_nan_pnl
-    assert_series_equal(financial.pnl.underwater_equity(x)[:15], expected_start)
-    assert_series_equal(financial.pnl.underwater_equity(x)[-15:], expected_end)
+    assert_series_equal(financial.pnl.drawdown_series(x)[:15], expected_start)
+    assert_series_equal(financial.pnl.drawdown_series(x)[-15:], expected_end)
 
     # as a series
     x = pd.Series(x)
-    assert_series_equal(financial.pnl.underwater_equity(x)[:15], expected_start)
-    assert_series_equal(financial.pnl.underwater_equity(x)[-15:], expected_end)
+    assert_series_equal(financial.pnl.drawdown_series(x)[:15], expected_start)
+    assert_series_equal(financial.pnl.drawdown_series(x)[-15:], expected_end)
 
     # as a dataframe
     df = pd.DataFrame({"px1": x, "px2": x})
     expected_start.name = "px1"
     expected_end.name = "px1"
-    assert_series_equal(financial.pnl.underwater_equity(df).iloc[:15, 0], expected_start)
-    assert_series_equal(financial.pnl.underwater_equity(df).iloc[-15:, 0], expected_end)
+    assert_series_equal(financial.pnl.drawdown_series(df).iloc[:15, 0], expected_start)
+    assert_series_equal(financial.pnl.drawdown_series(df).iloc[-15:, 0], expected_end)
     expected_start.name = "px2"
     expected_end.name = "px2"
-    assert_series_equal(financial.pnl.underwater_equity(df).iloc[:15, 1], expected_start)
-    assert_series_equal(financial.pnl.underwater_equity(df).iloc[-15:, 1], expected_end)
+    assert_series_equal(financial.pnl.drawdown_series(df).iloc[:15, 1], expected_start)
+    assert_series_equal(financial.pnl.drawdown_series(df).iloc[-15:, 1], expected_end)
 
     # nan as first element
     x = [np.nan, 1.2, -0.2, -0.3, 0.4, 2.0]
-    actual = financial.pnl.underwater_equity(x)
+    actual = financial.pnl.drawdown_series(x)
     expected = pd.Series([0.0, 0.0, -0.2, -0.5, -0.1, 0])
     assert_series_equal(actual, expected)
 
     # negative first number
     x = [-1, 2, 3, -6, -4, -5]
-    actual = financial.pnl.underwater_equity(x)
+    actual = financial.pnl.drawdown_series(x)
     expected = pd.Series([-1, 0, 0, -6, -10, -15])
     assert_series_equal(actual, expected)
 
     x = [-1, -2, 3, -6, -4, -5]
-    actual = financial.pnl.underwater_equity(x)
+    actual = financial.pnl.drawdown_series(x)
     expected = pd.Series([-1, -3, 0, -6, -10, -15])
     assert_series_equal(actual, expected)
 
@@ -477,7 +575,15 @@ def test_drawdown_details_empty():
     # no drawdown data
     x = pd.Series([1, 2, 3, 4, 5])
     expected = pd.DataFrame(
-        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+        columns=(
+            "start",
+            "end",
+            "max_index",
+            "length",
+            "enter_length",
+            "recovery_length",
+            "drawdown",
+        ),
     )
     actual = financial.pnl.drawdown_details(x)
     assert_frame_equal(actual, expected)
@@ -556,6 +662,17 @@ def test_calmar_ratio_nan(x, return_type):
         actual = financial.pnl.calmar_ratio(x)
         expected = pd.Series({"px1": 2.4556070, "px2": 1.092278163}, name="calmar_ratio")
         assert_series_equal(actual, expected)
+
+    if return_type == "nan":
+        print("testing return_type = nan")
+        expected = pd.Series({"nan": np.nan, "None": np.nan}, name="calmar_ratio")
+        actual = financial.pnl.calmar_ratio(x)
+        assert_series_equal(actual, expected)
+
+    if return_type == "zeros":
+        print("testing return_type = zeros")
+        actual = financial.pnl.calmar_ratio(x)
+        assert np.isnan(actual)
 
 
 def test_factor_correlation():

@@ -10,7 +10,8 @@ import pandas as pd
 from numpy.typing import NDArray
 from scipy import stats
 
-from portfolio.math.base import dispatch_calc, dropna, prior_index
+from portfolio.math import statistics
+from portfolio.math.base import dispatch_calc, dropna, prior_index, none_to_nan
 from portfolio.math.financial import common
 from portfolio.math.financial.common import (
     sharpe,
@@ -21,12 +22,9 @@ from portfolio.math.financial.common import (
     conditional_sortino_exp_weighted,
     omega_ratio,
     robustness,
-    add_factors_to_drawdown_details
 )
 from portfolio.math.transformation import pnl_to_equity
-from portfolio.math import statistics
 from portfolio.utils import match_index
-
 
 
 def __keep_imports():
@@ -45,9 +43,10 @@ def __keep_imports():
     assert add_factors_to_drawdown_details
 
 
-
 def risk_capital(
-        downside_df: pd.Series | pd.DataFrame, target_risk_percent: float, rebalance_freq: str = "ME"
+        downside_df: pd.Series | pd.DataFrame,
+        target_risk_percent: float,
+        rebalance_freq: str = "ME",
 ) -> pd.Series | pd.DataFrame:
     """
     Given a time series of downside risk measures, either a single series in a pd.Series or many series in a
@@ -66,7 +65,9 @@ def risk_capital(
 
     capital = downside_df / target_risk_percent
     res = capital.resample(rebalance_freq).last()  # sample to the rebalance_freq
-    res.loc[capital.index[0]] = capital.iloc[0]  # add the first item to fill in the values prior to first rebalance
+    res.loc[capital.index[0]] = capital.iloc[
+        0
+    ]  # add the first item to fill in the values prior to first rebalance
     res = match_index(res, capital)
     return res
 
@@ -78,7 +79,11 @@ def total_pnl(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series
     :param x: any of a list, numpy array, pd.Series or pd. DataFrame
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
+
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         return np.nansum(x)
 
     return dispatch_calc(x, _calc, name="total_pnl")
@@ -116,7 +121,9 @@ def k_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         x = np.insert(x, 0, 0)  # Add the anchor starting point at zero
         x = np.cumsum(x)
         res = stats.linregress(np.arange(len(x)), x)
@@ -125,7 +132,9 @@ def k_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     return dispatch_calc(x, _calc, name="k_ratio")
 
 
-def underwater_equity(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.Series | pd.DataFrame:
+def drawdown_series(
+        pnl: list | NDArray | pd.DataFrame | pd.Series,
+) -> pd.Series | pd.DataFrame:
     """
     For a given series of pnl will return the underwater equity of the input series.
 
@@ -135,7 +144,7 @@ def underwater_equity(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.Seri
     if isinstance(pnl, pd.DataFrame):
         res = {}
         for column in pnl.columns:
-            res[column] = underwater_equity(pnl[column])
+            res[column] = drawdown_series(pnl[column])
         return pd.DataFrame(res)
 
     pnl = pd.Series(pnl)
@@ -143,8 +152,9 @@ def underwater_equity(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.Seri
     equity = equity.ffill()  # fill forward the equity for NaN observations
     equity = equity.fillna(0)  # if the first instance is NaN this will make it zero
 
-    equity = pd.concat([pd.Series(0, index=[prior_index(equity)]),
-                        equity])  # prepend a zero as the first value to catch if the first pnl is negative
+    equity = pd.concat(
+        [pd.Series(0, index=[prior_index(equity)]), equity]
+    )  # prepend a zero as the first value to catch if the first pnl is negative
     high_water_mark = equity.cummax()
     high_water_mark = high_water_mark.iloc[1:]  # drop that prepended value
     equity = equity.iloc[1:]  # drop that prepended value
@@ -153,7 +163,9 @@ def underwater_equity(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.Seri
     return drawdown
 
 
-def drawdown_details(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.DataFrame | dict[str, pd.DataFrame]:
+def drawdown_details(
+        pnl: list | NDArray | pd.DataFrame | pd.Series,
+) -> pd.DataFrame | dict[str, pd.DataFrame]:
     """
     Given an input series or dataframe of pnls, will return a dataframe, or dict of dataframes for an input dataframe,
     of the drawdowns with their start and end index, length and max drawdown amount. If the input has a DateTimeIndex
@@ -168,7 +180,7 @@ def drawdown_details(pnl: list | NDArray | pd.DataFrame | pd.Series) -> pd.DataF
             res[column] = drawdown_details(pnl[column])
         return res
 
-    drawdown = underwater_equity(pnl)
+    drawdown = drawdown_series(pnl)
     return common.drawdown_details(drawdown)
 
 
@@ -192,7 +204,9 @@ def maximum_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd
     return common.maximum_drawdown(x, drawdown_details)
 
 
-def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+def average_drawdown_time(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+) -> float | pd.Series:
     """
     Average drawdown time length in days
 
@@ -201,7 +215,10 @@ def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float
     """
     return common.average_drawdown_time(x, drawdown_details)
 
-def average_recovery_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+
+def average_recovery_time(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+) -> float | pd.Series:
     """
     Average recovery time of drawdowns
 
@@ -239,10 +256,14 @@ def plunge_ratio_exp_weighted(
     :param half_life: half life of the exponential decay
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-    return common.plunge_ratio_exp_weighted(x, window_length, half_life, drawdown_details)
+    return common.plunge_ratio_exp_weighted(
+        x, window_length, half_life, drawdown_details
+    )
 
 
-def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int = 252) -> float | pd.Series:
+def calmar_ratio(
+        x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int = 252
+) -> float | pd.Series:
     """
     Calmar ratio
 
@@ -252,9 +273,13 @@ def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: i
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         avg_annual = np.mean(x) * annual_periods
         max_drawdown = maximum_drawdown(x)
+        if max_drawdown == 0:
+            return np.nan
         return avg_annual / abs(max_drawdown)
 
     return dispatch_calc(x, _calc, name="calmar_ratio")
@@ -275,7 +300,9 @@ def _prep_factor_correlation(
     :return: concatenated and differenced pd.DataFrame
     """
     # check the column names are unique
-    assert len(pnl.columns.intersection(factor.columns)) == 0, "duplicate columns in data and factors"
+    assert (
+            len(pnl.columns.intersection(factor.columns)) == 0
+    ), "duplicate columns in data and factors"
 
     # create the levels for both and combine
     equity = pnl_to_equity(pnl, start_index=prior_index(pnl))
@@ -329,3 +356,20 @@ def correlation_pvalues(
     """
     combined = _prep_factor_correlation(pnl, factor, periods)
     return statistics.correlation_pvalues(combined, method=method)
+
+
+def add_factors_to_drawdown_details(
+        drawdown_details_df: pd.DataFrame, factors: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Adds factors information to the drawdown details dataframe and return the new drawdown details dataframe.
+    The factors should be levels. The changes in the factors will be expressed as absolute changes.
+
+    :param drawdown_details_df: pd.DataFrame containing drawdown details in the form returned by drawdown_details()
+    :param factors: pd.DataFrame of time series of factor levels
+    :param as_percent: if True will calculate the factor changes as percentages, otherwise will calculate as absolute
+    :return: pd.DataFrame
+    """
+    return common.add_factors_to_drawdown_details(
+        drawdown_details_df, factors, as_percent=False
+    )

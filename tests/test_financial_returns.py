@@ -18,7 +18,10 @@ time_series_returns: dict = {}
 def setup_module():
     global time_series_equity, time_series_returns
     prices = mock_time_series(101, 0.10, auto_regress=0.01, drift=0.02, seed=5678, round_decimals=2)
-    time_series_equity = {"numpy": prices, "series": pd.Series(prices, index=pd.bdate_range("2024-04-01", periods=101))}
+    time_series_equity = {
+        "numpy": prices,
+        "series": pd.Series(prices, index=pd.bdate_range("2024-04-01", periods=101)),
+    }
 
     time_series_returns = {
         "numpy": np.diff(time_series_equity["numpy"]) / time_series_equity["numpy"][:-1],
@@ -27,6 +30,10 @@ def setup_module():
     rets_nan = time_series_returns["series"].copy()
     rets_nan.iloc[[-5, -15, -25, -35]] = np.nan
     time_series_returns["dataframe"] = pd.DataFrame({"px": time_series_returns["series"], "nans": rets_nan})
+    time_series_returns["nan"] = pd.DataFrame(
+        {"nan": [np.nan] * 5, "None": [None] * 5}, index=pd.date_range("2024-01-01", periods=5)
+    )
+    time_series_returns["zeros"] = pd.Series([0.0] * 5, index=pd.date_range("2024-01-01", periods=5))
 
 
 def test_total_return():
@@ -40,6 +47,12 @@ def test_sharpe():
     expected = pd.Series({"px": 0.557332321, "nans": 0.800113387}, name="sharpe")
     assert_series_equal(actual, expected)
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sharpe")
+    actual = financial.returns.sharpe(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.sharpe(time_series_returns["zeros"])
+    assert np.isnan(actual)
+
 
 def test_sharpe_exponential_weighted():
     assert financial.returns.sharpe_exp_weighted(time_series_returns["series"], 50, 15, annualize=False) == approx(
@@ -49,12 +62,24 @@ def test_sharpe_exponential_weighted():
     expected = pd.Series({"px": 0.63899256, "nans": 0.95164053}, name="sharpe_exponential_weighted")
     assert_series_equal(actual, expected)
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sharpe_exponential_weighted")
+    actual = financial.returns.sharpe_exp_weighted(time_series_returns["nan"], 5, 2)
+    assert_series_equal(actual, expected)
+    actual = financial.returns.sharpe_exp_weighted(time_series_returns["zeros"], 5, 2)
+    assert np.isnan(actual)
+
 
 def test_sortino():
     assert financial.returns.sortino(time_series_returns["series"]) == approx(1.024980961)
     actual = financial.returns.sortino(time_series_returns["dataframe"])
     expected = pd.Series({"px": 1.024980961, "nans": 1.469608032}, name="sortino")
     assert_series_equal(actual, expected)
+
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sortino")
+    actual = financial.returns.sortino(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.sortino(time_series_returns["zeros"])
+    assert np.isnan(actual)
 
 
 def test_sortino_exponential_weighted():
@@ -65,6 +90,12 @@ def test_sortino_exponential_weighted():
     expected = pd.Series({"px": 1.919548824, "nans": 3.0444}, name="sortino_exponential_weighted")
     assert_series_equal(actual, expected)
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="sortino_exponential_weighted")
+    actual = financial.returns.sortino_exp_weighted(time_series_returns["nan"], 5, 2)
+    assert_series_equal(actual, expected)
+    actual = financial.returns.sortino_exp_weighted(time_series_returns["zeros"], 5, 2)
+    assert np.isnan(actual)
+
 
 def test_conditional_sortino():
     assert financial.returns.conditional_sortino(time_series_returns["series"]) == approx(0.60491944)
@@ -72,14 +103,29 @@ def test_conditional_sortino():
     expected = pd.Series({"px": 0.60491944, "nans": 0.854541665}, name="conditional_sortino")
     assert_series_equal(actual, expected)
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="conditional_sortino")
+    actual = financial.returns.conditional_sortino(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.conditional_sortino(time_series_returns["zeros"])
+    assert np.isnan(actual)
+
 
 def test_conditional_sortino_exp_weighted():
     assert financial.returns.conditional_sortino_exp_weighted(time_series_returns["series"], 80, 40) == approx(
         0.852769333
     )
     actual = financial.returns.conditional_sortino_exp_weighted(time_series_returns["dataframe"], 50, 10)
-    expected = pd.Series({"px": 1.768665718, "nans": 2.351750037}, name="conditional_sortino_exponential_weighted")
+    expected = pd.Series(
+        {"px": 1.768665718, "nans": 2.351750037},
+        name="conditional_sortino_exponential_weighted",
+    )
     assert_series_equal(actual, expected)
+
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="conditional_sortino_exponential_weighted")
+    actual = financial.returns.conditional_sortino_exp_weighted(time_series_returns["nan"], 5, 2)
+    assert_series_equal(actual, expected)
+    actual = financial.returns.conditional_sortino_exp_weighted(time_series_returns["zeros"], 5, 2)
+    assert np.isnan(actual)
 
 
 def test_r_squared():
@@ -90,6 +136,12 @@ def test_r_squared():
         pd.Series({"px": 0.53572506, "nans": 0.69283529}, name="r_squared"),
     )
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="r_squared")
+    actual = financial.returns.r_squared(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.r_squared(time_series_returns["zeros"])
+    assert actual == 0.0
+
 
 def test_k_ratio():
     assert financial.returns.k_ratio(time_series_returns["numpy"]) == approx(1.06350680)
@@ -98,6 +150,12 @@ def test_k_ratio():
         financial.returns.k_ratio(time_series_returns["dataframe"]),
         pd.Series({"px": 1.06350680, "nans": 1.48629589}, name="k_ratio"),
     )
+
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="k_ratio")
+    actual = financial.returns.k_ratio(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.k_ratio(time_series_returns["zeros"])
+    assert np.isnan(actual)
 
 
 def test_omega_ratio():
@@ -108,6 +166,12 @@ def test_omega_ratio():
         pd.Series({"px": 1.091964937, "nans": 1.133791535}, name="omega_ratio"),
     )
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="omega_ratio")
+    actual = financial.returns.omega_ratio(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.omega_ratio(time_series_returns["zeros"])
+    assert np.isnan(actual)
+
 
 def test_robustness():
     assert financial.returns.robustness(time_series_returns["numpy"]) == approx(0.02)
@@ -117,9 +181,18 @@ def test_robustness():
         pd.Series({"px": 0.02, "nans": 0.02083333}, name="robustness"),
     )
 
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="robustness")
+    actual = financial.returns.robustness(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.robustness(time_series_returns["zeros"])
+    assert actual == 0.0
+
 
 def test_drawdown_series():
-    x = pd.Series(time_series_returns["numpy"], index=range(1, len(time_series_returns["numpy"]) + 1))
+    x = pd.Series(
+        time_series_returns["numpy"],
+        index=range(1, len(time_series_returns["numpy"]) + 1),
+    )
     x = price_index(x, start_index=0)
     expected = pd.Series([0, -0.0043, 0, 0, -0.016058249, -0.01037303, 0], index=range(7))
     actual = financial.returns.drawdown_series(x)
@@ -138,7 +211,15 @@ def test_drawdown_series():
     x = price_index(x, start_index=pd.Timestamp("2024-04-01"))
     expected = pd.DataFrame(
         {
-            "px": [-0.016922778, -0.005154639, -0.005446411, -0.010698308, -0.001556117, -0.006516242, -0.001361603],
+            "px": [
+                -0.016922778,
+                -0.005154639,
+                -0.005446411,
+                -0.010698308,
+                -0.001556117,
+                -0.006516242,
+                -0.001361603,
+            ],
             "nans": [-0.011771712, 0, 0, -0.005280657, 0, -0.004967855, 0],
         },
         index=pd.bdate_range(start="2024-08-09", periods=7),
@@ -214,28 +295,8 @@ def test_drawdown_details():
                     "2024-07-30",
                 ]
             ],
-            "length": [
-                1.00,
-                2.00,
-                34.00,
-                5.00,
-                4.00,
-                8.00,
-                3.00,
-                2.00,
-                31.00,
-            ],
-            "enter_length": [
-                0.0,
-                0.0,
-                27.0,
-                2.0,
-                3.0,
-                6.0,
-                0.0,
-                1.0,
-                17.0,
-            ],
+            "length": [1.00, 2.00, 34.00, 5.00, 4.00, 8.00, 3.00, 2.00, 31.00],
+            "enter_length": [0.0, 0.0, 27.0, 2.0, 3.0, 6.0, 0.0, 1.0, 17.0],
             "recovery_length": [1.0, 2.0, 7.0, 3.0, 1.0, 2.0, 3.0, 1.0, np.nan],
             "drawdown": [
                 -0.004300000,
@@ -327,14 +388,22 @@ def test_drawdown_details():
         },
     )
     actual = financial.returns.drawdown_details(time_series_returns["dataframe"])
-    assert_frame_equal(actual['nans'], expected, check_dtype=False)
+    assert_frame_equal(actual["nans"], expected, check_dtype=False)
 
 
 def test_drawdown_details_empty():
     # no drawdown data
     x = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5])
     expected = pd.DataFrame(
-        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+        columns=(
+            "start",
+            "end",
+            "max_index",
+            "length",
+            "enter_length",
+            "recovery_length",
+            "drawdown",
+        ),
     )
     actual = financial.returns.drawdown_details(x)
     assert_frame_equal(actual, expected)
@@ -347,44 +416,53 @@ def test_drawdown_details_empty():
 
 def test_average_drawdown():
     expected = pd.Series({"px": -0.01535097, "nans": -0.01283156}, name="average_drawdown")
-    actual = financial.returns.average_drawdown(time_series_returns['dataframe'])
+    actual = financial.returns.average_drawdown(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
 
 
 def test_maximum_drawdown():
     expected = pd.Series({"px": -0.020820999, "nans": -0.020820999}, name="maximum_drawdown")
-    actual = financial.returns.maximum_drawdown(time_series_returns['dataframe'])
+    actual = financial.returns.maximum_drawdown(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
 
 
 def test_average_drawdown_time():
     expected = pd.Series({"px": 10.0, "nans": 7.0}, name="average_drawdown_time")
-    actual = financial.returns.average_drawdown_time(time_series_returns['dataframe'])
+    actual = financial.returns.average_drawdown_time(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
 
 
 def test_average_recovery_time():
     expected = pd.Series({"px": 2.5, "nans": 3.166667}, name="average_recovery_time")
-    actual = financial.returns.average_recovery_time(time_series_returns['dataframe'])
+    actual = financial.returns.average_recovery_time(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
 
 
 def test_plunge_ratio():
     expected = pd.Series({"px": -0.600735, "nans": -0.727871}, name="plunge_ratio")
-    actual = financial.returns.plunge_ratio(time_series_returns['dataframe'])
+    actual = financial.returns.plunge_ratio(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
 
 
 def test_plunge_ratio_exp_weighted():
-    expected = pd.Series({"px": -0.502269030, "nans": -0.801793373}, name="plunge_ratio_exponential_weighted")
-    actual = financial.returns.plunge_ratio_exp_weighted(time_series_returns['dataframe'], 75, 25)
+    expected = pd.Series(
+        {"px": -0.502269030, "nans": -0.801793373},
+        name="plunge_ratio_exponential_weighted",
+    )
+    actual = financial.returns.plunge_ratio_exp_weighted(time_series_returns["dataframe"], 75, 25)
     assert_series_equal(actual, expected)
 
 
 def test_calmar_ratio():
     expected = pd.Series({"px": 3.430906491, "nans": 5.082554087}, name="calmar_ratio")
-    actual = financial.returns.calmar_ratio(time_series_returns['dataframe'])
+    actual = financial.returns.calmar_ratio(time_series_returns["dataframe"])
     assert_series_equal(actual, expected)
+
+    expected = pd.Series({"nan": np.nan, "None": np.nan}, name="calmar_ratio")
+    actual = financial.returns.calmar_ratio(time_series_returns["nan"])
+    assert_series_equal(actual, expected)
+    actual = financial.returns.calmar_ratio(time_series_returns["zeros"])
+    assert np.isnan(actual)
 
 
 def test_factor_correlation():

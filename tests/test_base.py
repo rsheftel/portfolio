@@ -15,6 +15,26 @@ time_series_01_series = pd.Series(x, index=dates)
 time_series_01_df = pd.DataFrame({"px1": x, "px2": x * 2}, index=pd.date_range("2024-01-01", periods=100, freq="1D"))
 
 
+def test_none_to_nan():
+    df_in = pd.DataFrame({"a": [1, None, 3], "b": [None, 5, None]})
+    expected = pd.DataFrame({"a": [1, np.nan, 3], "b": [np.nan, 5, np.nan]})
+    assert_frame_equal(base.none_to_nan(df_in), expected)
+
+    df_in = pd.DataFrame({"a": ["a", None, "c"], "b": [None, "d", None]})
+    expected = pd.DataFrame({"a": ["a", np.nan, "c"], "b": [np.nan, "d", np.nan]})
+    assert_frame_equal(base.none_to_nan(df_in), expected)
+
+    expected = base.none_to_nan(pd.Series([np.nan, 1, np.nan, 2, np.nan]))
+    actual = base.none_to_nan(pd.Series([None, 1, None, 2, np.nan]))
+    assert_series_equal(actual, expected)
+
+    actual = base.none_to_nan([None, 1, None, 2, np.nan])
+    assert_equal(actual, np.array([np.nan, 1, np.nan, 2, np.nan]))
+
+    actual = base.none_to_nan(np.array([None, 1, None, 2, np.nan]))
+    assert_equal(actual, np.array([np.nan, 1, np.nan, 2, np.nan]))
+
+
 def test_exp_weights():
     expected = [
         0.120683934,

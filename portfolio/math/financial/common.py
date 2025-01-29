@@ -9,7 +9,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 import portfolio.utils as pdutils
-from portfolio.math.base import dispatch_calc, dropna
+from portfolio.math.base import dispatch_calc, dropna, none_to_nan
 from portfolio.math.statistics import (
     mean_exp_weighted,
     stdev_exp_weighted,
@@ -19,7 +19,9 @@ from portfolio.math.statistics import (
 
 
 def sharpe(
-    x: list | NDArray | pd.DataFrame | pd.Series, annualize: bool = True, annual_periods: int = 252
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        annualize: bool = True,
+        annual_periods: int = 252,
 ) -> float | pd.Series:
     """
     Sharpe ratio assuming no risk-free rate
@@ -31,6 +33,9 @@ def sharpe(
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         return np.nanmean(x) / np.nanstd(x)
 
     res = dispatch_calc(x, _calc, name="sharpe")
@@ -80,7 +85,9 @@ def sortino(
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0 or not np.any(x):
+            return np.nan
         negative_returns = np.minimum(x, 0.0)
         std = np.std(negative_returns)
         return np.mean(x) / std
@@ -109,8 +116,10 @@ def sortino_exp_weighted(
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-
+    x = none_to_nan(x)
     mean = mean_exp_weighted(x, window_length, half_life, annualize, annual_periods)
+    if len(x) == 0:
+        return np.nan
     negative_returns = np.minimum(x, 0.0)
     std = stdev_exp_weighted(negative_returns, window_length, half_life, annualize, annual_periods)
     res = mean / std
@@ -136,12 +145,19 @@ def conditional_sortino(
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         return np.nanmean(x)
 
     res = dispatch_calc(x, _calc, name="conditional_sortino")
     if annualize:
         res = res * annual_periods
-    res = res / downside_deviation(x, annualize=annualize, annual_periods=annual_periods)
+    downside = downside_deviation(x, annualize=annualize, annual_periods=annual_periods)
+    if not isinstance(downside, pd.Series):
+        if downside == 0.0 or np.isnan(downside):
+            return np.nan
+    res = res / downside
     if isinstance(res, pd.Series):
         res.name = "conditional_sortino"
     return res
@@ -184,7 +200,9 @@ def omega_ratio(x: list | NDArray | pd.DataFrame | pd.Series, threshold=0) -> fl
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0 or not np.any(x):
+            return np.nan
         # Calculate gains and losses relative to the threshold
         gains = x - threshold
         positive_gains = np.maximum(gains, 0)
@@ -215,7 +233,9 @@ def robustness(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Serie
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0:
+            return np.nan
         x_total = np.sum(x)
         if x_total <= 0.0:  # if Total PnL is negative the robustness is 0%
             return 0.0
@@ -229,7 +249,9 @@ def robustness(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Serie
     return dispatch_calc(x, _calc, name="robustness")
 
 
-def drawdown_details(drawdown: pd.DataFrame | pd.Series) -> pd.DataFrame | dict[str, pd.DataFrame]:
+def drawdown_details(
+        drawdown: pd.DataFrame | pd.Series,
+) -> pd.DataFrame | dict[str, pd.DataFrame]:
     """
     Given an input series or dataframe of drawdowns, will return a dataframe, or dict of dataframes for an input
     dataframe, of the drawdowns with their start and end index, length and max drawdown amount.
@@ -256,7 +278,15 @@ def drawdown_details(drawdown: pd.DataFrame | pd.Series) -> pd.DataFrame | dict[
 
     if len(start) == 0:  # start.empty
         return pd.DataFrame(
-            columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+            columns=(
+                "start",
+                "end",
+                "max_index",
+                "length",
+                "enter_length",
+                "recovery_length",
+                "drawdown",
+            ),
         )
 
     # drawdown has no end (end period in dd)
@@ -275,7 +305,15 @@ def drawdown_details(drawdown: pd.DataFrame | pd.Series) -> pd.DataFrame | dict[
         end.append(drawdown.index[-1])
 
     result = pd.DataFrame(
-        columns=("start", "end", "max_index", "length", "enter_length", "recovery_length", "drawdown"),
+        columns=(
+            "start",
+            "end",
+            "max_index",
+            "length",
+            "enter_length",
+            "recovery_length",
+            "drawdown",
+        ),
         index=range(0, len(start)),
     )
 
@@ -426,7 +464,10 @@ def plunge_ratio(x: list | NDArray | pd.DataFrame | pd.Series, drawdown_details)
 
 
 def plunge_ratio_exp_weighted(
-        x: list | NDArray | pd.DataFrame | pd.Series, window_length: int, half_life: int, drawdown_details
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        window_length: int,
+        half_life: int,
+        drawdown_details,
 ) -> float | pd.Series:
     """
     Exponentially weighted Plunge Ratio.

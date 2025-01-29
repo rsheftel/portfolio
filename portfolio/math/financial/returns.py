@@ -54,6 +54,8 @@ def total_return(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Ser
         # Compute the cumulative product to get the compounded growth over time
         # The last element of compounded_growth will give us the total compounded return
         x = dropna(x)
+        if len(x) == 0:
+            return np.nan
         return np.cumprod(1 + x)[-1] - 1
 
     return dispatch_calc(x, _calc, name="total_return")
@@ -73,7 +75,7 @@ def r_squared(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series
     def _calc(x):
         x = dropna(x)
         x = transformation.price_index(x, start_index=True)
-        if len(x) < 1:
+        if len(x) <= 1:
             return np.nan
 
         rhat = stats.linregress(np.arange(len(x)), x).rvalue
@@ -93,7 +95,9 @@ def k_ratio(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
     """
 
     def _calc(x):
-        x = dropna(x)
+        x = np.asanyarray(dropna(x))
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         x = transformation.price_index(x, start_index=True)
         res = stats.linregress(np.arange(len(x)), x)
         return res.slope / (res.stderr * sqrt(len(x)))
@@ -130,7 +134,6 @@ def drawdown_series(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
 
     The max drawdown can be obtained by simply calling .min() on the result (since the drawdown series is negative)
     Method ignores all gaps of NaN's in the price series.
-
     """
     # make a copy so that we don't modify original data
     drawdown = prices.copy()
@@ -153,7 +156,9 @@ def drawdown_series(prices: pd.Series | pd.DataFrame) -> pd.Series | pd.DataFram
     return drawdown
 
 
-def drawdown_details(returns: list | NDArray | pd.DataFrame | pd.Series) -> pd.DataFrame | dict[str, pd.DataFrame]:
+def drawdown_details(
+        returns: list | NDArray | pd.DataFrame | pd.Series,
+) -> pd.DataFrame | dict[str, pd.DataFrame]:
     """
     Given an input series or dataframe of returns, will return a dataframe, or dict of dataframes for an input
     dataframe, of the drawdowns with their start and end index, length and max drawdown amount.
@@ -198,7 +203,9 @@ def maximum_drawdown(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd
     return common.maximum_drawdown(x, drawdown_details)
 
 
-def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+def average_drawdown_time(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+) -> float | pd.Series:
     """
     Average drawdown time length in days
 
@@ -208,7 +215,9 @@ def average_drawdown_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float
     return common.average_drawdown_time(x, drawdown_details)
 
 
-def average_recovery_time(x: list | NDArray | pd.DataFrame | pd.Series) -> float | pd.Series:
+def average_recovery_time(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+) -> float | pd.Series:
     """
     Average recovery time of drawdowns
 
@@ -246,10 +255,14 @@ def plunge_ratio_exp_weighted(
     :param half_life: half life of the exponential decay
     :return: float if X is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
-    return common.plunge_ratio_exp_weighted(x, window_length, half_life, drawdown_details)
+    return common.plunge_ratio_exp_weighted(
+        x, window_length, half_life, drawdown_details
+    )
 
 
-def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int = 252) -> float | pd.Series:
+def calmar_ratio(
+        x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int = 252
+) -> float | pd.Series:
     """
     Calmar ratio
 
@@ -261,8 +274,12 @@ def calmar_ratio(x: list | NDArray | pd.DataFrame | pd.Series, annual_periods: i
 
     def _calc(x):
         x = dropna(x)
+        if len(x) == 0 or np.all(np.isnan(x)) or not np.any(x):
+            return np.nan
         avg_annual = statistics.cagr(price_index(x, start_index=prior_index(x)))
         max_drawdown = maximum_drawdown(x)
+        if max_drawdown == 0:
+            return np.nan
         return avg_annual / abs(max_drawdown)
 
     return dispatch_calc(x, _calc, name="calmar_ratio", as_series=True)

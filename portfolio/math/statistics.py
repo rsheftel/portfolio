@@ -2,35 +2,45 @@
 Statistical and related functions
 """
 
+from math import sqrt
 from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-from scipy.odr import Data, Model, ODR
-from scipy.stats import linregress, ttest_1samp, ttest_ind, pearsonr, spearmanr, kendalltau
-from sklearn.decomposition import PCA
-from wpca import WPCA
+from scipy.stats import ttest_1samp, ttest_ind, pearsonr, spearmanr, kendalltau
 
-from math import sqrt
-from portfolio.math.base import dropna, calc_exponential_function, dispatch_calc
+from portfolio.math.base import dropna, calc_exponential_function, dispatch_calc, none_to_nan
 from portfolio.utils import reindex_superset
 
 
-def mean(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
+def mean(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        name: str = None,
+        annualize: bool = False,
+        annual_periods: int = 252,
+) -> float | pd.Series:
     """
     Given a list or series calculate the mean dropping all NaNs
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :param annualize: if True the annualize the results
+    :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         return np.nanmean(x)
 
     name = "mean" if name is None else name
-    return dispatch_calc(x, _calc, name=name)
+    res = dispatch_calc(x, _calc, name=name)
+    if annualize:
+        res = res * annual_periods
+    return res
 
 
 def mean_exp_weighted(
@@ -57,6 +67,8 @@ def mean_exp_weighted(
 
     def _calc(x, weights):
         x, weights = dropna(x, weights)
+        if len(x) == 0:
+            return np.nan
         return np.average(x, weights=weights)
 
     name = "mean_exponential_weighted" if name is None else name
@@ -66,16 +78,48 @@ def mean_exp_weighted(
     return res
 
 
+def median(
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        name: str = None,
+        annualize: bool = False,
+        annual_periods: int = 252,
+) -> float | pd.Series:
+    """
+    Given a list or series calculate the median dropping all NaNs
+
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
+    :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
+    :param annualize: if True the annualize the results
+    :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
+    :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
+    """
+
+    def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
+        return np.nanmedian(x)
+
+    name = "median" if name is None else name
+    res = dispatch_calc(x, _calc, name=name)
+    if annualize:
+        res = res * annual_periods
+    return res
+
+
 def min(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
     """
     Given a list or series calculate the min dropping all NaNs
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         return np.nanmin(x)
 
     name = "min" if name is None else name
@@ -86,12 +130,15 @@ def max(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float
     """
     Given a list or series calculate the max dropping all NaNs
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         return np.nanmax(x)
 
     name = "max" if name is None else name
@@ -99,13 +146,15 @@ def max(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float
 
 
 def stdev(
-        x: list | NDArray | pd.DataFrame | pd.Series, annualize: bool = True, annual_periods: int = 252,
-        name: str = None
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        annualize: bool = True,
+        annual_periods: int = 252,
+        name: str = None,
 ) -> float | pd.Series:
     """
     Given a list or series calculate the standard deviation dropping all nans
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param annualize: if True the annualize the results
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
@@ -113,6 +162,9 @@ def stdev(
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         return np.nanstd(x)
 
     name = "standard_deviation" if name is None else name
@@ -146,6 +198,8 @@ def stdev_exp_weighted(
 
     def _calc(x, weights):
         x, weights = dropna(x, weights)
+        if len(x) == 0:
+            return np.nan
         average = np.average(x, weights=weights)
         variance = np.average((x - average) ** 2, weights=weights)
         return sqrt(variance)
@@ -158,8 +212,10 @@ def stdev_exp_weighted(
 
 
 def downside_deviation(
-        x: list | NDArray | pd.DataFrame | pd.Series, annualize: bool = True, annual_periods: int = 252,
-        name: str = None
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        annualize: bool = True,
+        annual_periods: int = 252,
+        name: str = None,
 ) -> float | pd.Series:
     """
     Downside semi-deviation. This is the standard deviation of all the observations less than the MAR, where the
@@ -174,8 +230,13 @@ def downside_deviation(
     """
 
     def _calc(x):
+        x = none_to_nan(x)
+        if np.all(np.isnan(x)):
+            return np.nan
         x = dropna(x)
         x = x[x < 0]
+        if len(x) == 0:
+            return 0
         variance = np.average(x ** 2, weights=None)
         return sqrt(variance)
 
@@ -207,9 +268,15 @@ def downside_deviation_exp_weighted(
     """
 
     def _calc(x, weights):
+        x = none_to_nan(x)
+        if np.all(np.isnan(x)):
+            return np.nan
         x, weights = dropna(x, weights)
+        weights = np.asarray(weights)
         filters = x < 0
         x = x[filters]
+        if len(x) == 0:
+            return 0
         weights = np.array(weights)[filters]
         variance = np.average(x ** 2, weights=weights)
         return sqrt(variance)
@@ -224,7 +291,7 @@ def cagr(prices: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int 
     """
     Given a time series of prices, calculate the compound annual growth rate.
 
-    :param prices: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param prices: any of a list, numpy array, pd.Series or pd.DataFrame
     :param annual_periods: number of periods in the vector in a year for annualization, ie: 252 for a daily vector.
         This is only used if the prices series does not have a DateTimeIndex, if so that is used.
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
@@ -242,58 +309,6 @@ def cagr(prices: list | NDArray | pd.DataFrame | pd.Series, annual_periods: int 
     if isinstance(prices, pd.DataFrame):
         res.name = "cagr"
     return res
-
-
-def _odr_objective(p, x):
-    """*PRIVATE* Basic linear regression 'model' for use with ODR"""
-    return (p[0] * x) + p[1]
-
-
-def orthogonal_distance_regression(x, y, weights=None):
-    """
-    Calculate the Orthogonal Distance Regression (aka: Total Least Squares) from the x and y list. Return the slope and
-    intercept.
-    Uses this::  http://blog.rtwilson.com/orthogonal-distance-regression-in-python/
-    :param x: list of independent values
-    :param y: list of dependent values
-    :param weights: list of weights, if None then ignored
-    :return: slope, intercept
-    """
-
-    linreg = linregress(x, y)
-    mod = Model(_odr_objective)
-    dat = Data(x, y, weights)
-    od = ODR(dat, mod, beta0=linreg[0:2])
-    out = od.run()
-    return out.beta[0], out.beta[1]
-
-
-# noinspection PyUnresolvedReferences
-def total_least_squares(x, y, weights=None):
-    """
-    Calculate the Total Least Squares (aka: Orthogonal Distance Regression) from the x and y list. Return the slope and
-    intercept. For weighted TLS this library is used: https://github.com/jakevdp/wpca  It has two implementations
-    of the weighted TLS either the Delchambre (WPCA) or Bailey (EMPCA), this uses WPCA but replacing the function call
-    will change the method. The weights are applied to the result of the error^2 * weight, and as such provide the
-    raw weights, no need to square root as that is done in the function.
-
-    :param x: list of independent values
-    :param y: list of dependent values
-    :param weights: list of weights, if None then ignored
-    :return: slope, intercept
-    """
-    xy = np.array([x, y]).T
-    if weights:
-        # The weights are used in the sum of squared errors minimization, so take
-        # the square root because the PCA function will square them in the solution
-        w = [sqrt(i) for i in weights]
-        ww = np.array([w, w]).T
-        model = WPCA(n_components=1).fit(xy, weights=ww)
-    else:
-        model = PCA(n_components=1).fit(xy)
-    slope = model.components_[0][1] / model.components_[0][0]
-    intercept = model.mean_[1] - model.mean_[0] * slope
-    return slope, intercept
 
 
 def ttest_1sample_1side(x: list | NDArray | pd.DataFrame | pd.Series, name: str = None) -> float | pd.Series:
@@ -348,7 +363,7 @@ def first_date(x: pd.Series | pd.DataFrame) -> pd.Series | Any:
         return first
 
     elif isinstance(x, pd.DataFrame):
-        res = pd.Series(name="first_date")
+        res = pd.Series(name="first_date", index=x.columns, dtype=x.index.dtype)
         for col in x.columns:
             res[col] = first_date(x[col])
         return res
@@ -370,7 +385,7 @@ def last_date(x: pd.Series | pd.DataFrame) -> pd.Series | Any:
         return first
 
     elif isinstance(x, pd.DataFrame):
-        res = pd.Series(name="last_date")
+        res = pd.Series(name="last_date", index=x.columns, dtype=x.index.dtype)
         for col in x.columns:
             res[col] = last_date(x[col])
         return res
@@ -382,7 +397,7 @@ def observations_count(x: list | NDArray | pd.DataFrame | pd.Series, name: str =
     """
     Given a list or series calculate the number of non NaN values
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
@@ -395,20 +410,28 @@ def observations_count(x: list | NDArray | pd.DataFrame | pd.Series, name: str =
 
 
 def percentage_above(
-        x: list | NDArray | pd.DataFrame | pd.Series, threshold: int | float = 0, name: str = None
+        x: list | NDArray | pd.DataFrame | pd.Series,
+        threshold: int | float = 0,
+        exclude_zeros: bool = False,
+        name: str = None,
 ) -> float | pd.Series:
     """
-    Given a list or series calculate the max dropping all NaNs
+    Given a list or series calculate the percentage above the threshold dropping all NaNs
 
-    :param x: any of a list, numpy array, pd.Series or pd. DataFrame
+    :param x: any of a list, numpy array, pd.Series or pd.DataFrame
     :param name: optional name for the pd.Series result if x is a pd.DataFrame. If None will use default
     :param threshold: threshold value
+    :param exclude_zeros: if True will treat zero values as NaN and dropped before calculating
     :return: float if x is a list, array or a pd.Series. A pd.Series if x is a pd.DataFrame
     """
 
     def _calc(x):
-        x = np.asarray(x)
+        x = none_to_nan(x)
+        if exclude_zeros:
+            x[x == 0] = np.nan
         x = dropna(x)
+        if len(x) == 0:
+            return np.nan
         return np.sum(x > threshold) / x.size
 
     name = "percentage_above" if name is None else name
@@ -456,7 +479,9 @@ def percentage_non_zero(x: list | NDArray | pd.DataFrame | pd.Series, name: str 
     """
 
     def _calc(x):
-        x = np.asarray(x)
+        x = none_to_nan(x)
+        if len(x) == 0 or np.all(np.isnan(x)):
+            return np.nan
         x = dropna(x)
         not_close_to_zero = ~np.isclose(x, 0, atol=1e-8, rtol=1e-5)
         return np.count_nonzero(not_close_to_zero) / x.size
@@ -527,9 +552,9 @@ def bin_list(
     :return: list | NDArray
     """
     assert min_value <= max_value, f"{min_value=} must be less than or equal to {max_value=}"
-    assert sum(
-        [bins is not None, digits is not None, bin_size is not None]
-    ) == 1, "only supply one of bins, digits or bin_size"
+    assert (
+            sum([bins is not None, digits is not None, bin_size is not None]) == 1
+    ), "only supply one of bins, digits or bin_size"
     if bins is not None:
         return bins
 
